@@ -9,6 +9,13 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
       },
+      preview: {
+        port: 10000,
+        host: '0.0.0.0',
+        allowedHosts: [
+          'livego-cg2e.onrender.com'
+        ]
+      },
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
