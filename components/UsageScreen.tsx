@@ -68,7 +68,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Visualizer Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full pb-4">
+      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full">
         <div className="mb-8 text-center px-8">
              <h2 className="text-2xl font-semibold text-white tracking-tight">Listening...</h2>
              <p className="text-gray-500 mt-2 text-sm">Gemini is active</p>
@@ -77,31 +77,31 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
         <Visualizer volume={isMuted ? 0 : volume} />
       </div>
 
-      {/* Captions Overlay (Above Controls) */}
-      <div className={`px-6 pb-4 flex justify-center z-20 transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Captions Overlay (Fixed position above controls) */}
+      <div className={`absolute bottom-[200px] left-0 right-0 px-6 flex justify-center z-20 pointer-events-none transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
           <div 
               ref={captionRef}
-              className="glass-dark rounded-xl px-6 py-4 max-w-[90%] md:max-w-[340px] w-full max-h-[180px] overflow-y-auto no-scrollbar scroll-smooth"
+              className="glass-dark rounded-xl px-5 py-3 max-w-[85%] md:max-w-[320px] pointer-events-auto max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth"
           >
-              <p className="text-center text-[14px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
+              <p className="text-center text-[13px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
                   {caption}
               </p>
           </div>
       </div>
 
-      {/* Controls Dock */}
-      <div className="px-8 pb-8 relative z-30">
-        <div className="glass-dark rounded-3xl p-6 flex justify-between items-center shadow-2xl">
+      {/* Controls Dock - Fixed at bottom */}
+      <div className="px-8 pb-10 relative z-30">
+        <div className="glass-dark rounded-3xl p-5 flex justify-between items-center shadow-2xl">
             
             {/* Mute Toggle */}
             <button 
                 onClick={toggleMute}
-                className={`flex flex-col items-center gap-2 transition-all active:scale-95 ${isMuted ? 'text-red-400' : 'text-white'}`}
+                className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isMuted ? 'text-red-400' : 'text-white'}`}
             >
                 <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-red-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
                     {isMuted ? <IconMicOff className="w-6 h-6" /> : <IconMic className="w-6 h-6" />}
                 </div>
-                <span className="text-[11px] font-medium tracking-wide uppercase opacity-60">
+                <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">
                     {isMuted ? 'Muted' : 'Mute'}
                 </span>
             </button>
@@ -109,23 +109,23 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
             {/* End Call */}
             <button 
                 onClick={onEndCall}
-                className="flex flex-col items-center gap-2 active:scale-95"
+                className="flex flex-col items-center gap-1.5 active:scale-95"
             >
                 <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500 shadow-lg shadow-red-500/30 text-white transition-transform hover:scale-105">
                     <IconPhoneOff className="w-8 h-8 fill-current" />
                 </div>
-                <span className="text-[11px] font-medium tracking-wide uppercase opacity-60">End</span>
+                <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">End</span>
             </button>
 
             {/* Speaker Toggle */}
             <button 
                 onClick={() => setIsSpeakerOn(!isSpeakerOn)}
-                className={`flex flex-col items-center gap-2 transition-all active:scale-95 ${isSpeakerOn ? 'text-blue-400' : 'text-white'}`}
+                className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isSpeakerOn ? 'text-blue-400' : 'text-white'}`}
             >
                 <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isSpeakerOn ? 'bg-blue-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
                     <IconVolume2 className="w-6 h-6" />
                 </div>
-                <span className="text-[11px] font-medium tracking-wide uppercase opacity-60">Speaker</span>
+                <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">Speaker</span>
             </button>
 
         </div>
