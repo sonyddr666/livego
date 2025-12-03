@@ -14,7 +14,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartCall, onSettings 
       <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[60%] bg-gradient-to-b from-blue-50/80 to-transparent rounded-[100%] blur-3xl pointer-events-none" />
 
       {/* Header */}
-      <div className="flex justify-between items-center px-8 pt-12 pb-6 relative z-10">
+      <div className="flex justify-between items-center px-8 pt-6 pb-6 relative z-10">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
              <IconSparkles className="w-6 h-6" />
