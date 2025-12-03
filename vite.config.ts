@@ -13,12 +13,12 @@ export default defineConfig(({ mode }) => {
         port: 10000,
         host: '0.0.0.0',
         allowedHosts: [
-          'livego-cg2e.onrender.com'
+          '.onrender.com'
         ]
       },
       plugins: [react()],
       define: {
-        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY)
       },
       resolve: {
         alias: {
