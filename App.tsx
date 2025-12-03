@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ScreenName, HistoryItem } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { UsageScreen } from './components/UsageScreen';
@@ -7,6 +7,8 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { useLiveAPI } from './hooks/useLiveAPI';
 import { IconChevronLeft } from './components/Icons';
 
+const HISTORY_STORAGE_KEY = 'livego_history';
+
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenName>(ScreenName.HOME);
   
@@ -14,9 +16,27 @@ const App: React.FC = () => {
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
   const [systemInstruction, setSystemInstruction] = useState<string>('You are a friendly, helpful, and concise conversational partner. Keep your responses relatively short to facilitate a back-and-forth dialogue.');
 
-  // History State
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  // History State - Load from localStorage on mount
+  const [history, setHistory] = useState<HistoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+      console.error('Failed to load history from localStorage:', error);
+      return [];
+    }
+  });
+  
   const startTimeRef = useRef<number>(0);
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (error) {
+      console.error('Failed to save history to localStorage:', error);
+    }
+  }, [history]);
 
   const { connected, connect, disconnect, isMuted, toggleMute, volume, transcript } = useLiveAPI();
 
