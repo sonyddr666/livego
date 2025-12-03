@@ -68,7 +68,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Visualizer Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full mb-20">
+      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full pb-4">
         <div className="mb-8 text-center px-8">
              <h2 className="text-2xl font-semibold text-white tracking-tight">Listening...</h2>
              <p className="text-gray-500 mt-2 text-sm">Gemini is active</p>
@@ -77,20 +77,20 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
         <Visualizer volume={isMuted ? 0 : volume} />
       </div>
 
-      {/* Captions Overlay (Absolute Positioned) */}
-      <div className={`absolute bottom-[160px] left-0 right-0 px-6 flex justify-center z-20 pointer-events-none transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Captions Overlay (Above Controls) */}
+      <div className={`px-6 pb-4 flex justify-center z-20 transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
           <div 
               ref={captionRef}
-              className="glass-dark rounded-xl px-6 py-4 max-w-[90%] md:max-w-[300px] pointer-events-auto max-h-[130px] overflow-y-auto no-scrollbar scroll-smooth"
+              className="glass-dark rounded-xl px-6 py-4 max-w-[90%] md:max-w-[340px] w-full max-h-[180px] overflow-y-auto no-scrollbar scroll-smooth"
           >
-              <p className="text-center text-[15px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
+              <p className="text-center text-[14px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
                   {caption}
               </p>
           </div>
       </div>
 
       {/* Controls Dock */}
-      <div className="px-8 pb-12 relative z-30">
+      <div className="px-8 pb-8 relative z-30">
         <div className="glass-dark rounded-3xl p-6 flex justify-between items-center shadow-2xl">
             
             {/* Mute Toggle */}
