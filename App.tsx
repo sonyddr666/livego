@@ -84,15 +84,6 @@ const App: React.FC = () => {
         - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame).
       */}
       <div className="w-full h-[100dvh] md:max-w-[390px] md:h-[844px] bg-black relative md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col md:border-[8px] border-black box-border transition-all duration-300">
-        
-        {/* Dynamic Status Bar Area (Mock) - Visible only on Desktop/Framed view */}
-        <div className="hidden md:flex absolute top-0 left-0 right-0 h-6 z-50 justify-between px-6 pt-2 pointer-events-none mix-blend-difference text-white text-[10px] font-bold opacity-0">
-             <span>9:41</span>
-             <div className="flex gap-1">
-                 <span>📶</span>
-                 <span>🔋</span>
-             </div>
-        </div>
 
         {/* Inner Screen Content */}
         <div className="flex-1 relative bg-white overflow-hidden md:rounded-[32px] w-full h-full">
