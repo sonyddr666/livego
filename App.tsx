@@ -77,13 +77,13 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-[#e5e5e5] font-sans">
+    <div className="w-full h-[100dvh] md:flex md:justify-center md:items-center md:min-h-screen md:bg-[#e5e5e5] font-sans">
       {/* 
         Responsive Container:
-        - Mobile: w-full h-full (100dvh), no border, no radius.
-        - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame).
+        - Mobile: Full screen, no padding, no border, no radius
+        - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame)
       */}
-      <div className="w-full h-[100dvh] md:max-w-[390px] md:h-[844px] relative md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] overflow-hidden md:border-[8px] md:border-black md:bg-black transition-all duration-300">
+      <div className="w-full h-full md:max-w-[390px] md:h-[844px] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] md:border-[8px] md:border-black md:bg-black">
 
         {/* Inner Screen Content */}
         <div className="w-full h-full bg-white overflow-hidden md:rounded-[32px]">
