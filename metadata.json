@@ -1,0 +1,7 @@
+{
+  "name": "LIVEGO Voice App",
+  "description": "A real-time conversational voice application using Gemini 2.5 Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
