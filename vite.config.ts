@@ -13,7 +13,9 @@ export default defineConfig(({ mode }) => {
         port: 10000,
         host: '0.0.0.0',
         allowedHosts: [
-          '.onrender.com'
+          '.onrender.com',
+          'chat.livego.dev',
+          '.livego.dev'
         ]
       },
       plugins: [react()],
