@@ -83,10 +83,10 @@ const App: React.FC = () => {
         - Mobile: w-full h-full (100dvh), no border, no radius.
         - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame).
       */}
-      <div className="w-full h-[100dvh] md:max-w-[390px] md:h-[844px] bg-black relative md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col md:border-[8px] border-black box-border transition-all duration-300">
+      <div className="w-full h-[100dvh] md:max-w-[390px] md:h-[844px] relative md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] overflow-hidden md:border-[8px] md:border-black md:bg-black transition-all duration-300">
 
         {/* Inner Screen Content */}
-        <div className="flex-1 relative bg-white overflow-hidden md:rounded-[32px] w-full h-full">
+        <div className="w-full h-full bg-white overflow-hidden md:rounded-[32px]">
             {currentScreen === ScreenName.HOME && (
             <HomeScreen 
                 onStartCall={handleStartCall} 
