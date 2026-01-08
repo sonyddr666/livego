@@ -66,7 +66,7 @@ const App: React.FC = () => {
     }
   };
 
-  const { connected, connect, disconnect, isMuted, toggleMute, volume, transcript } = useLiveAPI();
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, volume, transcript, getAnalysers } = useLiveAPI();
 
   const handleNavigate = (screen: ScreenName) => {
     setCurrentScreen(screen);
@@ -80,8 +80,18 @@ const App: React.FC = () => {
     }
     startTimeRef.current = Date.now();
     await connect({ voiceName, systemInstruction, apiKey });
-    setCurrentScreen(ScreenName.USAGE);
+    // Navigation to USAGE happens after connection is established? 
+    // Or optimistically?
+    // Given we have `isConnecting`, let's wait or show loading on Home.
+    // The useLiveAPI sets `connected` to true on open. We can watch that.
   };
+
+  // Watch for connection state to transition screen
+  useEffect(() => {
+      if (connected && currentScreen === ScreenName.HOME) {
+          setCurrentScreen(ScreenName.USAGE);
+      }
+  }, [connected, currentScreen]);
 
   const handleEndCall = () => {
     const endTime = Date.now();
@@ -126,6 +136,7 @@ const App: React.FC = () => {
               onSettings={() => handleNavigate(ScreenName.SETTINGS)}
               hasApiKey={hasApiKey}
               onConfigureApiKey={() => handleNavigate(ScreenName.ACCOUNT)}
+              isConnecting={isConnecting}
             />
           )}
 
@@ -137,6 +148,7 @@ const App: React.FC = () => {
               toggleMute={toggleMute}
               volume={volume}
               caption={transcript}
+              getAnalysers={getAnalysers}
             />
           )}
 

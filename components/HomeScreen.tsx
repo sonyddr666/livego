@@ -6,9 +6,16 @@ interface HomeScreenProps {
   onSettings: () => void;
   hasApiKey?: boolean;
   onConfigureApiKey?: () => void;
+  isConnecting?: boolean;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartCall, onSettings, hasApiKey = true, onConfigureApiKey }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ 
+  onStartCall, 
+  onSettings, 
+  hasApiKey = true, 
+  onConfigureApiKey,
+  isConnecting = false
+}) => {
   return (
     <div className="flex flex-col h-full bg-white text-gray-900 relative overflow-hidden">
 
@@ -25,6 +32,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartCall, onSettings,
         </div>
         <button
           onClick={onSettings}
+          disabled={isConnecting}
           className="p-3 rounded-full hover:bg-gray-100 active:scale-95 transition-all text-gray-500"
         >
           <IconSettings className="w-6 h-6" />
@@ -54,18 +62,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartCall, onSettings,
         {/* Hero Button */}
         <div className="relative group">
           {/* Pulse Ring */}
-          <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-500 animate-pulse-ring" />
+          {!isConnecting && (
+            <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-500 animate-pulse-ring" />
+          )}
 
           <button
             onClick={onStartCall}
-            className={`relative w-40 h-40 rounded-full bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 flex items-center justify-center shadow-[0_20px_50px_rgba(37,99,235,0.4)] transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer border-4 border-white/10 ${!hasApiKey ? 'opacity-60' : ''}`}
+            disabled={isConnecting || !hasApiKey}
+            className={`relative w-40 h-40 rounded-full flex items-center justify-center shadow-[0_20px_50px_rgba(37,99,235,0.4)] transition-all duration-300 transform 
+                ${isConnecting ? 'bg-white border-4 border-indigo-200 cursor-wait' : 'bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 hover:scale-105 active:scale-95 border-4 border-white/10'} 
+                ${!hasApiKey ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
+            `}
           >
-            <IconSparkles className="w-16 h-16 text-white" />
+            {isConnecting ? (
+                <div className="relative">
+                    <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                </div>
+            ) : (
+                <IconSparkles className="w-16 h-16 text-white" />
+            )}
           </button>
         </div>
 
-        <p className="mt-10 text-sm font-medium text-slate-400 uppercase tracking-widest">
-          {hasApiKey ? 'Tap to speak' : 'Configure API key first'}
+        <p className="mt-10 text-sm font-medium text-slate-400 uppercase tracking-widest animate-pulse">
+          {isConnecting ? 'Connecting...' : hasApiKey ? 'Tap to speak' : 'Configure API key first'}
         </p>
       </div>
 

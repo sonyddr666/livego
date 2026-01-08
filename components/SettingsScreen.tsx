@@ -30,7 +30,7 @@ const SettingsItem: React.FC<{
         className={`flex items-center p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors ${!isLast ? 'border-b border-gray-100' : ''}`}
     >
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-4 text-white ${color}`}>
-            {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
+            {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: "w-5 h-5" })}
         </div>
         <div className="flex-1 flex justify-between items-center mr-2">
             <span className="text-[15px] font-medium text-gray-900">{label}</span>

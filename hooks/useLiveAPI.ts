@@ -5,25 +5,36 @@ import { LiveConfig } from '../types';
 
 interface UseLiveAPIResult {
   connected: boolean;
+  isConnecting: boolean; // New state
   isMuted: boolean;
   volume: number;
   transcript: string;
+  config: LiveConfig | null;
+  audioCtx: AudioContext | null; // Expose AudioContext
   connect: (config: LiveConfig) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
+  getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
 export const useLiveAPI = (): UseLiveAPIResult => {
   const [connected, setConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false); // Add loading state
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
+  const [currentConfig, setCurrentConfig] = useState<LiveConfig | null>(null);
 
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  
+  // Analyser for visualization
+  const inputAnalyserRef = useRef<AnalyserNode | null>(null);
+  const outputAnalyserRef = useRef<AnalyserNode | null>(null);
+
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
@@ -35,17 +46,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
-  // Volume calculation helper
-  const updateVolume = useCallback((data: Float32Array) => {
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i] * data[i];
-    }
-    const rms = Math.sqrt(sum / data.length);
-    const vol = Math.min(rms * 5, 1);
-    setVolume(prev => prev * 0.8 + vol * 0.2);
-  }, []);
-
+  // Use the output context for the visualizer as it's usually the "main" one for playback
+  // However, we can expose whichever is active.
+  // For the purpose of the UI, we just need to expose the Context so the Visualizer can create its own analyser 
+  // or we expose the analysers we created.
+  
   const disconnect = useCallback(() => {
     if (processorRef.current) {
       processorRef.current.disconnect();
@@ -78,9 +83,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     }
 
     setConnected(false);
+    setIsConnecting(false);
     setVolume(0);
     setIsMuted(false);
-    // Do not clear transcript here, we might want to save it
     currentSpeakerRef.current = null;
   }, []);
 
@@ -90,6 +95,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   const connect = useCallback(async (config: LiveConfig) => {
     try {
+      setIsConnecting(true); // Start loading
+      setCurrentConfig(config);
+
       // Prioritize user-configured API key over environment variable (defined at build time)
       const apiKey = config.apiKey || process.env.API_KEY;
       if (!apiKey) {
@@ -102,8 +110,19 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
 
+      // Setup Input Analyser
+      inputAnalyserRef.current = inputAudioContextRef.current.createAnalyser();
+      inputAnalyserRef.current.fftSize = 256;
+      inputAnalyserRef.current.smoothingTimeConstant = 0.5;
+
+      // Setup Output Analyser
+      outputAnalyserRef.current = outputAudioContextRef.current.createAnalyser();
+      outputAnalyserRef.current.fftSize = 256;
+      outputAnalyserRef.current.smoothingTimeConstant = 0.5;
+
       const outputNode = outputAudioContextRef.current.createGain();
-      outputNode.connect(outputAudioContextRef.current.destination);
+      outputNode.connect(outputAnalyserRef.current); // Connect through analyser
+      outputAnalyserRef.current.connect(outputAudioContextRef.current.destination);
 
       nextStartTimeRef.current = 0;
       setTranscript('');
@@ -112,26 +131,30 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025', // Updated model
         callbacks: {
           onopen: () => {
             console.log("Live Session Opened");
             setConnected(true);
+            setIsConnecting(false); // Stop loading
 
             if (!inputAudioContextRef.current) return;
 
             inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
+            // Connect input to analyser for visualization
+            if (inputAnalyserRef.current) {
+                inputSourceRef.current.connect(inputAnalyserRef.current);
+            }
+            
             processorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
 
             processorRef.current.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
 
               if (isMutedRef.current) {
-                setVolume(0);
+                // If muted, we might still want visualizer to show "silence" or handled by Visualizer component
                 return;
               }
-
-              updateVolume(inputData);
 
               // Pass the native sample rate for automatic resampling to 16kHz
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
@@ -149,10 +172,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text) {
-                // Determine if we need to switch speaker labels
                 const isNewTurn = currentSpeakerRef.current !== 'user';
                 currentSpeakerRef.current = 'user';
-
                 setTranscript(prev => {
                   const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'User: ' : '';
                   return prev + prefix + text;
@@ -166,7 +187,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               if (text) {
                 const isNewTurn = currentSpeakerRef.current !== 'gemini';
                 currentSpeakerRef.current = 'gemini';
-
                 setTranscript(prev => {
                   const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'Gemini: ' : '';
                   return prev + prefix + text;
@@ -192,9 +212,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
               }
 
-              const channelData = audioBuffer.getChannelData(0);
-              updateVolume(channelData.slice(0, 1000));
-
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
 
               const source = ctx.createBufferSource();
@@ -213,7 +230,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               sourcesRef.current.forEach(src => src.stop());
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
-              // Note: We do NOT clear transcript on interrupt to keep history
             }
           },
           onclose: () => {
@@ -227,8 +243,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {}, // Request user transcription
-          outputAudioTranscription: {}, // Request model transcription
+          inputAudioTranscription: {}, 
+          outputAudioTranscription: {},
           systemInstruction: config.systemInstruction,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } }
@@ -242,13 +258,35 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       console.error("Connection failed", error);
       disconnect();
     }
-  }, [disconnect, updateVolume]);
+  }, [disconnect]);
 
+  // Helper method to access analysers from the component
+  // We attach this to the AudioContext object effectively by proxy, or we could return refs
+  // To keep the API clean, we will return the active audioContext or a method to get data
+  
+  // Actually, React components can't easily read Refs from hooks if they change.
+  // We will patch the `audioCtx` return to include a `getAnalyser` function.
+  const getAnalyser = () => {
+      // Return output analyser if Gemini is speaking (or just default to it), 
+      // return input analyser if we want to visualize user mic.
+      // For a simple "Siri" wave, we often visualize both or mix them. 
+      // Since they are separate contexts, we return both or a composite object.
+      return {
+          input: inputAnalyserRef.current,
+          output: outputAnalyserRef.current
+      }
+  }
+
+  // We add this custom property to the returned object
   return {
     connected,
+    isConnecting,
     isMuted,
     volume,
     transcript,
+    config: currentConfig,
+    audioCtx: outputAudioContextRef.current, // mainly for timing
+    getAnalysers: getAnalyser,
     connect,
     disconnect,
     toggleMute

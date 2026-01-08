@@ -9,6 +9,7 @@ interface UsageScreenProps {
   toggleMute: () => void;
   volume: number;
   caption: string;
+  getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
 export const UsageScreen: React.FC<UsageScreenProps> = ({
@@ -17,7 +18,8 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
   isMuted,
   toggleMute,
   volume,
-  caption
+  caption,
+  getAnalysers
 }) => {
   const [seconds, setSeconds] = useState(0);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
@@ -68,13 +70,13 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Visualizer Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full">
-        <div className="mb-8 text-center px-8">
+      <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full mb-20">
+        <div className="mb-4 text-center px-8">
              <h2 className="text-2xl font-semibold text-white tracking-tight">Listening...</h2>
              <p className="text-gray-500 mt-2 text-sm">Gemini is active</p>
         </div>
         
-        <Visualizer volume={isMuted ? 0 : volume} />
+        <Visualizer analysers={getAnalysers()} isMuted={isMuted} />
       </div>
 
       {/* Captions Overlay (Fixed position above controls) */}
