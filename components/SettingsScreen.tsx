@@ -145,32 +145,32 @@ interface SettingsDetailProps {
 
 const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'];
 
+// Helper components defined OUTSIDE to prevent re-creation on each render
+const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="flex flex-col h-full bg-[#f3f4f6]">
+        {children}
+    </div>
+);
+
+const DetailHeader: React.FC<{ title: string; onBack: () => void }> = ({ title, onBack }) => (
+    <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
+        <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+            <IconChevronLeft className="w-6 h-6" />
+        </button>
+        <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">{title}</h1>
+    </div>
+);
+
 export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     screen, onBack, voiceName, setVoiceName, systemInstruction, setSystemInstruction, apiKey, setApiKey
 }) => {
     const [showApiKey, setShowApiKey] = React.useState(false);
 
-    // Header helper
-    const Header = ({ title }: { title: string }) => (
-        <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-            <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
-                <IconChevronLeft className="w-6 h-6" />
-            </button>
-            <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">{title}</h1>
-        </div>
-    );
-
-    const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-        <div className="flex flex-col h-full bg-[#f3f4f6]">
-            {children}
-        </div>
-    );
-
     // --- VOICE SCREEN ---
     if (screen === ScreenName.VOICE) {
         return (
             <ContentWrapper>
-                <Header title="Voice" />
+                <DetailHeader onBack={onBack} title="Voice" />
                 <div className="p-6">
                     <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
                         {VOICES.map((v, i) => (
@@ -196,7 +196,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.INSTRUCTIONS) {
         return (
             <ContentWrapper>
-                <Header title="System Instructions" />
+                <DetailHeader onBack={onBack} title="System Instructions" />
                 <div className="p-6 flex-1 flex flex-col box-border">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex-1 flex flex-col overflow-hidden">
                         <textarea
@@ -219,7 +219,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.ACCOUNT) {
         return (
             <ContentWrapper>
-                <Header title="Account" />
+                <DetailHeader onBack={onBack} title="Account" />
                 <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
                     <div className="flex flex-col items-center mb-8">
                         <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-500 mb-4">
@@ -276,7 +276,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.NOTIFICATIONS) {
         return (
             <ContentWrapper>
-                <Header title="Notifications" />
+                <DetailHeader onBack={onBack} title="Notifications" />
                 <div className="p-6">
                     <SettingsGroup title="Alerts">
                         <div className="p-4 border-b border-gray-100 flex justify-between items-center">
@@ -297,7 +297,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.PRIVACY) {
         return (
             <ContentWrapper>
-                <Header title="Privacy" />
+                <DetailHeader onBack={onBack} title="Privacy" />
                 <div className="p-6">
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6">
                         <p className="text-sm text-blue-800 leading-relaxed">
@@ -324,7 +324,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.HELP) {
         return (
             <ContentWrapper>
-                <Header title="Help & Support" />
+                <DetailHeader onBack={onBack} title="Help & Support" />
                 <div className="p-6">
                     <SettingsGroup title="FAQ">
                         <div className="p-4 border-b border-gray-100"><span className="text-gray-900 font-medium">How to change voice?</span></div>
@@ -339,7 +339,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     if (screen === ScreenName.ABOUT) {
         return (
             <ContentWrapper>
-                <Header title="About" />
+                <DetailHeader onBack={onBack} title="About" />
                 <div className="p-6 flex flex-col items-center pt-10">
                     <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-lg mb-6">
                         <IconSparkles className="w-8 h-8" />
