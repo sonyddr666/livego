@@ -3,14 +3,44 @@ import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig } from '../types';
 
+// AudioWorklet processor code as a string to avoid external file loading issues
+const workletCode = `
+class PCMProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = [];
+    this.bufferSize = 4096;
+  }
+
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    if (!input || !input[0]) return true;
+    
+    const channelData = input[0];
+    for (let i = 0; i < channelData.length; i++) {
+      this.buffer.push(channelData[i]);
+    }
+
+    if (this.buffer.length >= this.bufferSize) {
+      const chunk = new Float32Array(this.buffer);
+      this.port.postMessage(chunk);
+      this.buffer = [];
+    }
+
+    return true;
+  }
+}
+registerProcessor('pcm-processor', PCMProcessor);
+`;
+
 interface UseLiveAPIResult {
   connected: boolean;
-  isConnecting: boolean; // New state
+  isConnecting: boolean;
   isMuted: boolean;
   volume: number;
   transcript: string;
   config: LiveConfig | null;
-  audioCtx: AudioContext | null; // Expose AudioContext
+  audioCtx: AudioContext | null;
   connect: (config: LiveConfig) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
@@ -19,7 +49,7 @@ interface UseLiveAPIResult {
 
 export const useLiveAPI = (): UseLiveAPIResult => {
   const [connected, setConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false); // Add loading state
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
@@ -29,7 +59,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   
   // Analyser for visualization
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -46,15 +76,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
-  // Use the output context for the visualizer as it's usually the "main" one for playback
-  // However, we can expose whichever is active.
-  // For the purpose of the UI, we just need to expose the Context so the Visualizer can create its own analyser 
-  // or we expose the analysers we created.
-  
   const disconnect = useCallback(() => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
+    if (audioWorkletNodeRef.current) {
+      audioWorkletNodeRef.current.disconnect();
+      audioWorkletNodeRef.current = null;
     }
     if (inputSourceRef.current) {
       inputSourceRef.current.disconnect();
@@ -98,7 +123,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       setIsConnecting(true); // Start loading
       setCurrentConfig(config);
 
-      // Prioritize user-configured API key over environment variable (defined at build time)
+      // Prioritize user-configured API key over environment variable
       const apiKey = config.apiKey || process.env.API_KEY;
       if (!apiKey) {
         throw new Error("API Key not found. Please configure your API key in Settings > Account or set VITE_GEMINI_API_KEY environment variable.");
@@ -109,6 +134,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
+
+      // Register AudioWorklet
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+      await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
 
       // Setup Input Analyser
       inputAnalyserRef.current = inputAudioContextRef.current.createAnalyser();
@@ -131,7 +161,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025', // Updated model
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
           onopen: () => {
             console.log("Live Session Opened");
@@ -146,13 +176,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 inputSourceRef.current.connect(inputAnalyserRef.current);
             }
             
-            processorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-            processorRef.current.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
+            // Replace ScriptProcessor with AudioWorklet
+            audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+            
+            audioWorkletNodeRef.current.port.onmessage = (event) => {
+              const inputData = event.data as Float32Array;
 
               if (isMutedRef.current) {
-                // If muted, we might still want visualizer to show "silence" or handled by Visualizer component
                 return;
               }
 
@@ -164,8 +194,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               });
             };
 
-            inputSourceRef.current.connect(processorRef.current);
-            processorRef.current.connect(inputAudioContextRef.current.destination);
+            inputSourceRef.current.connect(audioWorkletNodeRef.current);
+            audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
           },
           onmessage: async (message: LiveServerMessage) => {
             // Handle Input Transcription (User)
@@ -260,24 +290,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     }
   }, [disconnect]);
 
-  // Helper method to access analysers from the component
-  // We attach this to the AudioContext object effectively by proxy, or we could return refs
-  // To keep the API clean, we will return the active audioContext or a method to get data
-  
-  // Actually, React components can't easily read Refs from hooks if they change.
-  // We will patch the `audioCtx` return to include a `getAnalyser` function.
   const getAnalyser = () => {
-      // Return output analyser if Gemini is speaking (or just default to it), 
-      // return input analyser if we want to visualize user mic.
-      // For a simple "Siri" wave, we often visualize both or mix them. 
-      // Since they are separate contexts, we return both or a composite object.
       return {
           input: inputAnalyserRef.current,
           output: outputAnalyserRef.current
       }
   }
 
-  // We add this custom property to the returned object
   return {
     connected,
     isConnecting,
@@ -285,7 +304,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     volume,
     transcript,
     config: currentConfig,
-    audioCtx: outputAudioContextRef.current, // mainly for timing
+    audioCtx: outputAudioContextRef.current,
     getAnalysers: getAnalyser,
     connect,
     disconnect,
