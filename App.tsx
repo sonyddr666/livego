@@ -28,7 +28,7 @@ const App: React.FC = () => {
   });
 
   // Computed: Check if API key is available (user-configured or environment)
-  const hasApiKey = Boolean(apiKey || import.meta.env.VITE_GEMINI_API_KEY);
+  const hasApiKey = Boolean(apiKey || process.env.API_KEY);
 
   // History State - Load from localStorage on mount
   const [history, setHistory] = useState<HistoryItem[]>(() => {
