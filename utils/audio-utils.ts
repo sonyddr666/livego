@@ -38,14 +38,79 @@ export async function decodeAudioData(
   return buffer;
 }
 
-export function createPcmBlob(data: Float32Array): Blob {
-  const l = data.length;
+/**
+ * Resamples audio data from source sample rate to target sample rate.
+ * Uses linear interpolation for efficient real-time processing.
+ */
+export function resampleAudio(
+  inputData: Float32Array,
+  sourceSampleRate: number,
+  targetSampleRate: number
+): Float32Array {
+  if (sourceSampleRate === targetSampleRate) {
+    return inputData;
+  }
+
+  const ratio = sourceSampleRate / targetSampleRate;
+  const outputLength = Math.floor(inputData.length / ratio);
+  const output = new Float32Array(outputLength);
+
+  for (let i = 0; i < outputLength; i++) {
+    const srcIndex = i * ratio;
+    const srcIndexFloor = Math.floor(srcIndex);
+    const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
+    const fraction = srcIndex - srcIndexFloor;
+
+    // Linear interpolation between samples
+    output[i] = inputData[srcIndexFloor] * (1 - fraction) + inputData[srcIndexCeil] * fraction;
+  }
+
+  return output;
+}
+
+/**
+ * Creates a PCM blob for sending to Gemini API.
+ * Automatically resamples from source sample rate to 16kHz (required by Gemini).
+ */
+export function createPcmBlob(data: Float32Array, sourceSampleRate: number = 16000): Blob {
+  // Resample to 16kHz if necessary (Gemini expects 16kHz input)
+  const resampledData = resampleAudio(data, sourceSampleRate, 16000);
+
+  const l = resampledData.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
+    // Clamp values to prevent overflow
+    const sample = Math.max(-1, Math.min(1, resampledData[i]));
+    int16[i] = sample * 32767;
   }
   return {
     data: arrayBufferToBase64(new Uint8Array(int16.buffer)),
     mimeType: 'audio/pcm;rate=16000',
   };
+}
+
+/**
+ * Resamples an AudioBuffer to a target sample rate for playback.
+ * Used to convert Gemini's 24kHz output to the system's native sample rate.
+ */
+export async function resampleAudioBuffer(
+  buffer: AudioBuffer,
+  targetSampleRate: number
+): Promise<AudioBuffer> {
+  if (buffer.sampleRate === targetSampleRate) {
+    return buffer;
+  }
+
+  const offlineCtx = new OfflineAudioContext(
+    buffer.numberOfChannels,
+    Math.ceil(buffer.duration * targetSampleRate),
+    targetSampleRate
+  );
+
+  const source = offlineCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+
+  return await offlineCtx.startRendering();
 }

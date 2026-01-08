@@ -152,7 +152,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
 
     // Header helper
     const Header = ({ title }: { title: string }) => (
-        <div className="flex items-center px-6 pt-12 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
             <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
                 <IconChevronLeft className="w-6 h-6" />
             </button>

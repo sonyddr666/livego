@@ -65,7 +65,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
     return (
       <div className="flex flex-col h-full bg-[#f3f4f6]">
         {/* Detail Header */}
-        <div className="flex items-center px-6 pt-12 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
             <button onClick={() => setSelectedItem(null)} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
                 <IconChevronLeft className="w-6 h-6" />
             </button>
@@ -118,7 +118,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
   // List View
   return (
     <div className="flex flex-col h-full bg-[#f3f4f6]">
-      <div className="flex items-center px-6 pt-12 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
+      <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
         <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
           <IconChevronLeft className="w-6 h-6" />
         </button>
