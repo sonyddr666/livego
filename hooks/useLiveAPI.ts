@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { base64ToUint8Array, decodeAudioData, createPcmBlob } from '../utils/audio-utils';
+import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig } from '../types';
 
 interface UseLiveAPIResult {
@@ -99,8 +99,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const ai = new GoogleGenAI({ apiKey });
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
-      outputAudioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      inputAudioContextRef.current = new AudioContextClass();
+      outputAudioContextRef.current = new AudioContextClass();
 
       const outputNode = outputAudioContextRef.current.createGain();
       outputNode.connect(outputAudioContextRef.current.destination);
@@ -133,7 +133,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
               updateVolume(inputData);
 
-              const pcmBlob = createPcmBlob(inputData);
+              // Pass the native sample rate for automatic resampling to 16kHz
+              const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
+              const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
               sessionPromise.then(session => {
                 session.sendRealtimeInput({ media: pcmBlob });
               });
@@ -176,12 +178,19 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputAudioContextRef.current) {
               const ctx = outputAudioContextRef.current;
-              const audioBuffer = await decodeAudioData(
+
+              // Decode audio at 24kHz (Gemini's output rate)
+              let audioBuffer = await decodeAudioData(
                 base64ToUint8Array(base64Audio),
                 ctx,
                 24000,
                 1
               );
+
+              // Resample to system's native sample rate if different
+              if (ctx.sampleRate !== 24000) {
+                audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
+              }
 
               const channelData = audioBuffer.getChannelData(0);
               updateVolume(channelData.slice(0, 1000));
