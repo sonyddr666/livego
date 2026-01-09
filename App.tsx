@@ -119,16 +119,16 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-[100dvh] md:flex md:justify-center md:items-center md:min-h-screen md:bg-[#e5e5e5] font-sans">
+    <div className="w-full min-h-[100dvh] md:flex md:justify-center md:items-center md:min-h-screen md:bg-[#f4f4f5] font-sans">
       {/* 
         Responsive Container:
-        - Mobile: Full screen, no padding, no border, no radius
-        - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame)
+        - Mobile: Full screen, no padding, no border
+        - Desktop (md+): Wider, taller, and optimized for desktop layouts
       */}
-      <div className="w-full h-full md:max-w-[390px] md:h-[844px] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_rgba(0,0,0,0.3)] md:border-[8px] md:border-black md:bg-black">
+      <div className="w-full min-h-[100dvh] md:max-w-[1120px] md:min-h-[760px] md:h-auto relative overflow-hidden md:rounded-[32px] md:shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)] md:border md:border-white/40 md:bg-white">
 
         {/* Inner Screen Content */}
-        <div className="w-full h-full bg-white overflow-hidden md:rounded-[32px]">
+        <div className="w-full h-full bg-white overflow-hidden">
           {currentScreen === ScreenName.HOME && (
             <HomeScreen
               onStartCall={handleStartCall}
