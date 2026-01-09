@@ -1,7 +1,10 @@
 import React from 'react';
 import { ScreenName } from '../types';
-import { IconChevronLeft, IconChevronRight, IconUser, IconBell, IconLock, IconHelp, IconInfo, IconMic, IconSparkles, IconClock } from './Icons';
+import { IconChevronLeft, IconChevronRight, IconUser, IconBell, IconLock, IconHelp, IconInfo, IconMic, IconSparkles, IconClock, IconCheck, IconEye, IconEyeOff } from './Icons';
 import { AVAILABLE_VOICES } from '../config/voices';
+import type { VoiceConfig } from '../config/voices';
+
+const APP_VERSION = '1.0.3';
 
 interface SettingsProps {
     onBack: () => void;
@@ -9,14 +12,18 @@ interface SettingsProps {
     currentVoice: string;
 }
 
-const SettingsGroup: React.FC<{ children: React.ReactNode; title?: string }> = ({ children, title }) => (
-    <div className="mb-6">
-        {title && <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-4 mb-2">{title}</h3>}
-        <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
-            {children}
+const SettingsGroup: React.FC<{ children: React.ReactNode; title?: string }> = ({ children, title }) => {
+    const titleId = React.useId();
+
+    return (
+        <div className="mb-6" role="group" aria-labelledby={title ? titleId : undefined}>
+            {title && <h3 id={titleId} className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-4 mb-2">{title}</h3>}
+            <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                {children}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const SettingsItem: React.FC<{
     icon: React.ReactNode;
@@ -26,9 +33,10 @@ const SettingsItem: React.FC<{
     isLast?: boolean;
     color?: string;
 }> = ({ icon, label, value, onClick, isLast, color = "bg-gray-100" }) => (
-    <div
+    <button
+        type="button"
         onClick={onClick}
-        className={`flex items-center p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors ${!isLast ? 'border-b border-gray-100' : ''}`}
+        className={`w-full flex items-center p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
     >
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-4 text-white ${color}`}>
             {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: "w-5 h-5" })}
@@ -37,8 +45,32 @@ const SettingsItem: React.FC<{
             <span className="text-[15px] font-medium text-gray-900">{label}</span>
             {value && <span className="text-[14px] text-gray-400">{value}</span>}
         </div>
-        <IconChevronRight className="text-gray-300 w-5 h-5" />
-    </div>
+        <IconChevronRight className="text-gray-300 w-5 h-5 shrink-0" />
+    </button>
+);
+
+const ToggleRow: React.FC<{
+    label: string;
+    checked: boolean;
+    onChange: (nextValue: boolean) => void;
+    isLast?: boolean;
+    description?: string;
+}> = ({ label, checked, onChange, isLast, description }) => (
+    <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+    >
+        <div className="flex flex-col">
+            <span className="text-gray-900 font-medium">{label}</span>
+            {description && <span className="text-xs text-gray-400">{description}</span>}
+        </div>
+        <span className={`w-10 h-6 rounded-full relative transition-colors ${checked ? 'bg-green-500' : 'bg-gray-200'}`} aria-hidden="true">
+            <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+        </span>
+    </button>
 );
 
 // --- MAIN SETTINGS LIST ---
@@ -47,7 +79,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
     return (
         <div className="flex flex-col h-full bg-[#f3f4f6]">
             <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-                <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+                <button type="button" onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
                     <IconChevronLeft className="w-6 h-6" />
                 </button>
                 <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">
@@ -119,10 +151,15 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                 </SettingsGroup>
 
                 <div className="mt-8 text-center pb-8">
-                    <button className="text-red-500 text-sm font-semibold py-3 px-8 rounded-xl bg-white shadow-sm border border-gray-100 active:bg-red-50 w-full transition-colors">
+                    <button
+                        type="button"
+                        disabled
+                        title="Coming soon"
+                        className="text-red-500 text-sm font-semibold py-3 px-8 rounded-xl bg-white shadow-sm border border-gray-100 active:bg-red-50 w-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                         Log Out
                     </button>
-                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION 1.02</p>
+                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION {APP_VERSION}</p>
                 </div>
             </div>
         </div>
@@ -144,7 +181,7 @@ interface SettingsDetailProps {
     setApiKey: (key: string) => void;
 }
 
-// Vozes agora vêm do arquivo de configuração: config/voices.ts
+// Voices are sourced from config/voices.ts
 
 // Helper components defined OUTSIDE to prevent re-creation on each render
 const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -155,17 +192,42 @@ const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const DetailHeader: React.FC<{ title: string; onBack: () => void }> = ({ title, onBack }) => (
     <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-        <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+        <button type="button" onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
             <IconChevronLeft className="w-6 h-6" />
         </button>
         <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">{title}</h1>
     </div>
 );
 
+const VoiceOption: React.FC<{
+    voice: VoiceConfig;
+    isSelected: boolean;
+    onSelect: () => void;
+    isLast?: boolean;
+}> = ({ voice, isSelected, onSelect, isLast }) => (
+    <button
+        type="button"
+        role="radio"
+        aria-checked={isSelected}
+        onClick={onSelect}
+        className={`w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+    >
+        <div className="flex flex-col">
+            <span className="text-[15px] font-medium text-gray-900">{voice.name}</span>
+            {voice.description && <span className="text-xs text-gray-400">{voice.description}</span>}
+        </div>
+        {isSelected && <IconCheck className="w-5 h-5 text-blue-500" />}
+    </button>
+);
+
 export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     screen, onBack, voiceName, setVoiceName, systemInstruction, setSystemInstruction, apiKey, setApiKey
 }) => {
     const [showApiKey, setShowApiKey] = React.useState(false);
+    const [pushNotifications, setPushNotifications] = React.useState(true);
+    const [emailDigest, setEmailDigest] = React.useState(false);
+    const [shareUsageStats, setShareUsageStats] = React.useState(true);
+    const [allowPersonalization, setAllowPersonalization] = React.useState(true);
 
     // --- VOICE SCREEN ---
     if (screen === ScreenName.VOICE) {
@@ -173,19 +235,15 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
             <ContentWrapper>
                 <DetailHeader onBack={onBack} title="Voice" />
                 <div className="p-6">
-                    <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                    <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100" role="radiogroup" aria-label="Voice">
                         {AVAILABLE_VOICES.map((voice, i) => (
-                            <div
+                            <VoiceOption
                                 key={voice.id}
-                                onClick={() => setVoiceName(voice.id)}
-                                className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 ${i !== AVAILABLE_VOICES.length - 1 ? 'border-b border-gray-100' : ''}`}
-                            >
-                                <div className="flex flex-col">
-                                    <span className="text-[15px] font-medium text-gray-900">{voice.name}</span>
-                                    {voice.description && <span className="text-xs text-gray-400">{voice.description}</span>}
-                                </div>
-                                {voiceName === voice.id && <div className="text-blue-500 font-bold">✓</div>}
-                            </div>
+                                voice={voice}
+                                isSelected={voiceName === voice.id}
+                                onSelect={() => setVoiceName(voice.id)}
+                                isLast={i === AVAILABLE_VOICES.length - 1}
+                            />
                         ))}
                     </div>
                     <p className="mt-4 text-xs text-gray-500 px-2">
@@ -242,13 +300,16 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                                     value={apiKey}
                                     onChange={(e) => setApiKey(e.target.value)}
                                     placeholder="Enter your Gemini API key"
+                                    aria-label="Gemini API key"
                                     className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50"
                                 />
                                 <button
+                                    type="button"
                                     onClick={() => setShowApiKey(!showApiKey)}
+                                    aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                                     className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                                 >
-                                    {showApiKey ? '🙈' : '👁️'}
+                                    {showApiKey ? <IconEyeOff className="w-5 h-5" /> : <IconEye className="w-5 h-5" />}
                                 </button>
                             </div>
                             <p className="mt-2 text-xs text-gray-500">
@@ -268,7 +329,12 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                         </div>
                     </SettingsGroup>
 
-                    <button className="w-full py-3 text-red-500 bg-white rounded-xl shadow-sm border border-gray-100 font-medium text-sm">
+                    <button
+                        type="button"
+                        disabled
+                        title="Coming soon"
+                        className="w-full py-3 text-red-500 bg-white rounded-xl shadow-sm border border-gray-100 font-medium text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                         Delete Account
                     </button>
                 </div>
@@ -276,28 +342,31 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
         );
     }
 
-    // --- NOTIFICATIONS SCREEN (FAKE DATA) ---
+    // --- NOTIFICATIONS SCREEN ---
     if (screen === ScreenName.NOTIFICATIONS) {
         return (
             <ContentWrapper>
                 <DetailHeader onBack={onBack} title="Notifications" />
                 <div className="p-6">
                     <SettingsGroup title="Alerts">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                            <span className="text-gray-900 font-medium">Push Notifications</span>
-                            <div className="w-10 h-6 bg-green-500 rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
-                        </div>
-                        <div className="p-4 flex justify-between items-center">
-                            <span className="text-gray-900 font-medium">Email Digest</span>
-                            <div className="w-10 h-6 bg-gray-200 rounded-full relative"><div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
-                        </div>
+                        <ToggleRow
+                            label="Push Notifications"
+                            checked={pushNotifications}
+                            onChange={setPushNotifications}
+                        />
+                        <ToggleRow
+                            label="Email Digest"
+                            checked={emailDigest}
+                            onChange={setEmailDigest}
+                            isLast
+                        />
                     </SettingsGroup>
                 </div>
             </ContentWrapper>
         );
     }
 
-    // --- PRIVACY SCREEN (FAKE DATA) ---
+    // --- PRIVACY SCREEN ---
     if (screen === ScreenName.PRIVACY) {
         return (
             <ContentWrapper>
@@ -310,21 +379,24 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                     </div>
 
                     <SettingsGroup>
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                            <span className="text-gray-900 font-medium">Share Usage Statistics</span>
-                            <div className="w-10 h-6 bg-green-500 rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
-                        </div>
-                        <div className="p-4 flex justify-between items-center">
-                            <span className="text-gray-900 font-medium">Allow Personalization</span>
-                            <div className="w-10 h-6 bg-green-500 rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
-                        </div>
+                        <ToggleRow
+                            label="Share Usage Statistics"
+                            checked={shareUsageStats}
+                            onChange={setShareUsageStats}
+                        />
+                        <ToggleRow
+                            label="Allow Personalization"
+                            checked={allowPersonalization}
+                            onChange={setAllowPersonalization}
+                            isLast
+                        />
                     </SettingsGroup>
                 </div>
             </ContentWrapper>
         );
     }
 
-    // --- HELP & ABOUT SCREENS (FAKE DATA) ---
+    // --- HELP & ABOUT SCREENS ---
     if (screen === ScreenName.HELP) {
         return (
             <ContentWrapper>
@@ -349,7 +421,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                         <IconSparkles className="w-8 h-8" />
                     </div>
                     <h2 className="text-xl font-bold text-gray-900">LIVEGO</h2>
-                    <p className="text-gray-400 mb-8">Version 1.02 (Beta)</p>
+                    <p className="text-gray-400 mb-8">Version {APP_VERSION} (Beta)</p>
 
                     <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                         <p className="text-sm text-gray-600 text-center leading-relaxed">
@@ -357,7 +429,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                             Designed to provide seamless real-time conversational experiences.
                         </p>
                     </div>
-                    <p className="mt-8 text-xs text-gray-300">© 2025 LiveGo Inc.</p>
+                    <p className="mt-8 text-xs text-gray-300">(c) 2025 LiveGo Inc.</p>
                 </div>
             </ContentWrapper>
         );
