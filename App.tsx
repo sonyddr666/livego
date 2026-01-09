@@ -5,7 +5,6 @@ import { UsageScreen } from './components/UsageScreen';
 import { SettingsScreen, SettingsDetailScreen } from './components/SettingsScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { useLiveAPI } from './hooks/useLiveAPI';
-import { IconChevronLeft } from './components/Icons';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
@@ -66,7 +65,7 @@ const App: React.FC = () => {
     }
   };
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, volume, transcript, getAnalysers } = useLiveAPI();
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, volume, transcript, getAnalysers } = useLiveAPI();
 
   const handleNavigate = (screen: ScreenName) => {
     setCurrentScreen(screen);
@@ -88,9 +87,9 @@ const App: React.FC = () => {
 
   // Watch for connection state to transition screen
   useEffect(() => {
-      if (connected && currentScreen === ScreenName.HOME) {
-          setCurrentScreen(ScreenName.USAGE);
-      }
+    if (connected && currentScreen === ScreenName.HOME) {
+      setCurrentScreen(ScreenName.USAGE);
+    }
   }, [connected, currentScreen]);
 
   const handleEndCall = () => {
@@ -146,6 +145,8 @@ const App: React.FC = () => {
               onSettings={() => handleNavigate(ScreenName.SETTINGS)}
               isMuted={isMuted}
               toggleMute={toggleMute}
+              isSpeakerOn={isSpeakerOn}
+              toggleSpeaker={toggleSpeaker}
               volume={volume}
               caption={transcript}
               getAnalysers={getAnalysers}

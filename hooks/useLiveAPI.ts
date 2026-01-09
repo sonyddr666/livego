@@ -37,6 +37,7 @@ interface UseLiveAPIResult {
   connected: boolean;
   isConnecting: boolean;
   isMuted: boolean;
+  isSpeakerOn: boolean;
   volume: number;
   transcript: string;
   config: LiveConfig | null;
@@ -44,6 +45,7 @@ interface UseLiveAPIResult {
   connect: (config: LiveConfig) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
+  toggleSpeaker: () => void;
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
@@ -51,6 +53,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const [connected, setConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [volume, setVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [currentConfig, setCurrentConfig] = useState<LiveConfig | null>(null);
@@ -60,10 +63,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
-  
+
   // Analyser for visualization
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
+
+  // Gain node for speaker control
+  const outputGainNodeRef = useRef<GainNode | null>(null);
 
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -118,6 +124,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     setIsMuted(prev => !prev);
   }, []);
 
+  const toggleSpeaker = useCallback(() => {
+    setIsSpeakerOn(prev => {
+      const newValue = !prev;
+      // Control the output gain node to mute/unmute speaker
+      if (outputGainNodeRef.current) {
+        outputGainNodeRef.current.gain.value = newValue ? 1 : 0;
+      }
+      return newValue;
+    });
+  }, []);
+
   const connect = useCallback(async (config: LiveConfig) => {
     try {
       setIsConnecting(true); // Start loading
@@ -151,6 +168,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       outputAnalyserRef.current.smoothingTimeConstant = 0.5;
 
       const outputNode = outputAudioContextRef.current.createGain();
+      outputGainNodeRef.current = outputNode; // Store reference for speaker control
       outputNode.connect(outputAnalyserRef.current); // Connect through analyser
       outputAnalyserRef.current.connect(outputAudioContextRef.current.destination);
 
@@ -173,12 +191,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
             // Connect input to analyser for visualization
             if (inputAnalyserRef.current) {
-                inputSourceRef.current.connect(inputAnalyserRef.current);
+              inputSourceRef.current.connect(inputAnalyserRef.current);
             }
-            
+
             // Replace ScriptProcessor with AudioWorklet
             audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
-            
+
             audioWorkletNodeRef.current.port.onmessage = (event) => {
               const inputData = event.data as Float32Array;
 
@@ -273,7 +291,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {}, 
+          inputAudioTranscription: {},
           outputAudioTranscription: {},
           systemInstruction: config.systemInstruction,
           speechConfig: {
@@ -291,16 +309,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   }, [disconnect]);
 
   const getAnalyser = () => {
-      return {
-          input: inputAnalyserRef.current,
-          output: outputAnalyserRef.current
-      }
+    return {
+      input: inputAnalyserRef.current,
+      output: outputAnalyserRef.current
+    }
   }
 
   return {
     connected,
     isConnecting,
     isMuted,
+    isSpeakerOn,
     volume,
     transcript,
     config: currentConfig,
@@ -308,6 +327,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     getAnalysers: getAnalyser,
     connect,
     disconnect,
-    toggleMute
+    toggleMute,
+    toggleSpeaker
   };
 };

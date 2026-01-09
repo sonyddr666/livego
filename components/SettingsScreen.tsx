@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScreenName } from '../types';
 import { IconChevronLeft, IconChevronRight, IconUser, IconBell, IconLock, IconHelp, IconInfo, IconMic, IconSparkles, IconClock } from './Icons';
+import { AVAILABLE_VOICES } from '../config/voices';
 
 interface SettingsProps {
     onBack: () => void;
@@ -121,7 +122,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                     <button className="text-red-500 text-sm font-semibold py-3 px-8 rounded-xl bg-white shadow-sm border border-gray-100 active:bg-red-50 w-full transition-colors">
                         Log Out
                     </button>
-                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION 1.0.0</p>
+                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION 1.02</p>
                 </div>
             </div>
         </div>
@@ -143,7 +144,7 @@ interface SettingsDetailProps {
     setApiKey: (key: string) => void;
 }
 
-const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'];
+// Vozes agora vêm do arquivo de configuração: config/voices.ts
 
 // Helper components defined OUTSIDE to prevent re-creation on each render
 const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -173,14 +174,17 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                 <DetailHeader onBack={onBack} title="Voice" />
                 <div className="p-6">
                     <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
-                        {VOICES.map((v, i) => (
+                        {AVAILABLE_VOICES.map((voice, i) => (
                             <div
-                                key={v}
-                                onClick={() => setVoiceName(v)}
-                                className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 ${i !== VOICES.length - 1 ? 'border-b border-gray-100' : ''}`}
+                                key={voice.id}
+                                onClick={() => setVoiceName(voice.id)}
+                                className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 ${i !== AVAILABLE_VOICES.length - 1 ? 'border-b border-gray-100' : ''}`}
                             >
-                                <span className="text-[15px] font-medium text-gray-900">{v}</span>
-                                {voiceName === v && <div className="text-blue-500 font-bold">✓</div>}
+                                <div className="flex flex-col">
+                                    <span className="text-[15px] font-medium text-gray-900">{voice.name}</span>
+                                    {voice.description && <span className="text-xs text-gray-400">{voice.description}</span>}
+                                </div>
+                                {voiceName === voice.id && <div className="text-blue-500 font-bold">✓</div>}
                             </div>
                         ))}
                     </div>
@@ -345,7 +349,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                         <IconSparkles className="w-8 h-8" />
                     </div>
                     <h2 className="text-xl font-bold text-gray-900">LIVEGO</h2>
-                    <p className="text-gray-400 mb-8">Version 1.0.0 (Beta)</p>
+                    <p className="text-gray-400 mb-8">Version 1.02 (Beta)</p>
 
                     <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                         <p className="text-sm text-gray-600 text-center leading-relaxed">
