@@ -5,16 +5,18 @@ import { UsageScreen } from './components/UsageScreen';
 import { SettingsScreen, SettingsDetailScreen } from './components/SettingsScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { useLiveAPI } from './hooks/useLiveAPI';
+import { useI18n } from './i18n';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
 
 const App: React.FC = () => {
+  const { t, locale } = useI18n();
   const [currentScreen, setCurrentScreen] = useState<ScreenName>(ScreenName.HOME);
 
   // Settings State
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
-  const [systemInstruction, setSystemInstruction] = useState<string>('You are a friendly, helpful, and concise conversational partner. Keep your responses relatively short to facilitate a back-and-forth dialogue.');
+  const [systemInstruction, setSystemInstruction] = useState<string>(() => t('systemInstruction.default'));
 
   // API Key State - Load from localStorage on mount
   const [apiKey, setApiKey] = useState<string>(() => {
@@ -103,7 +105,7 @@ const App: React.FC = () => {
     if (transcript.trim().length > 0) {
       const newItem: HistoryItem = {
         id: Date.now().toString(),
-        date: new Date().toLocaleString(),
+        date: new Date().toLocaleString(locale),
         duration: durationStr,
         transcript: transcript
       };
@@ -177,7 +179,8 @@ const App: React.FC = () => {
             ScreenName.HELP,
             ScreenName.ABOUT,
             ScreenName.VOICE,
-            ScreenName.INSTRUCTIONS
+            ScreenName.INSTRUCTIONS,
+            ScreenName.LANGUAGE
           ].includes(currentScreen) && (
               <SettingsDetailScreen
                 screen={currentScreen}

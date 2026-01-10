@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Visualizer } from './Visualizer';
 import { IconMic, IconMicOff, IconPhoneOff, IconVolume2, IconSettings } from './Icons';
+import { useI18n } from '../i18n';
 
 interface UsageScreenProps {
   onEndCall: () => void;
@@ -25,8 +26,17 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
   caption,
   getAnalysers
 }) => {
+  const { t } = useI18n();
   const [seconds, setSeconds] = useState(0);
   const captionRef = useRef<HTMLDivElement>(null);
+  const localizedCaption = useMemo(() => {
+    if (!caption) return caption;
+    const userLabel = t('transcript.userLabel');
+    const geminiLabel = t('transcript.geminiLabel');
+    return caption
+      .replace(/(^|\n)User: /g, `$1${userLabel}: `)
+      .replace(/(^|\n)Gemini: /g, `$1${geminiLabel}: `);
+  }, [caption, t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -58,7 +68,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       <div className="flex justify-between items-center px-8 pt-12 pb-6 relative z-10">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">Live</span>
+          <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">{t('usage.live')}</span>
         </div>
         <div className="flex flex-col items-center">
           <span className="text-gray-400 font-mono text-sm tracking-wider">{formatTime(seconds)}</span>
@@ -66,7 +76,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
         <button
           disabled
           className="p-2 rounded-full transition-colors text-gray-600 opacity-30 cursor-not-allowed"
-          title="End call to change settings"
+          title={t('usage.settingsDisabled')}
         >
           <IconSettings className="w-6 h-6" />
         </button>
@@ -75,8 +85,8 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       {/* Visualizer Area */}
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full mb-20">
         <div className="mb-4 text-center px-8">
-          <h2 className="text-2xl font-semibold text-white tracking-tight">Listening...</h2>
-          <p className="text-gray-500 mt-2 text-sm">Gemini is active</p>
+          <h2 className="text-2xl font-semibold text-white tracking-tight">{t('usage.listening')}</h2>
+          <p className="text-gray-500 mt-2 text-sm">{t('usage.geminiActive')}</p>
         </div>
 
         <Visualizer analysers={getAnalysers()} isMuted={isMuted} />
@@ -89,7 +99,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
           className="glass-dark rounded-xl px-5 py-3 max-w-[85%] md:max-w-[320px] pointer-events-auto max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth"
         >
           <p className="text-center text-[13px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
-            {caption}
+            {localizedCaption}
           </p>
         </div>
       </div>
@@ -107,7 +117,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
               {isMuted ? <IconMicOff className="w-6 h-6" /> : <IconMic className="w-6 h-6" />}
             </div>
             <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">
-              {isMuted ? 'Muted' : 'Mute'}
+              {isMuted ? t('usage.muted') : t('usage.mute')}
             </span>
           </button>
 
@@ -119,7 +129,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
             <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500 shadow-lg shadow-red-500/30 text-white transition-transform hover:scale-105">
               <IconPhoneOff className="w-8 h-8 fill-current" />
             </div>
-            <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">End</span>
+            <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">{t('usage.end')}</span>
           </button>
 
           {/* Speaker Toggle */}
@@ -131,7 +141,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
               <IconVolume2 className="w-6 h-6" />
             </div>
             <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">
-              {isSpeakerOn ? 'Speaker' : 'Muted'}
+              {isSpeakerOn ? t('usage.speaker') : t('usage.speakerMuted')}
             </span>
           </button>
 
