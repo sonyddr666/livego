@@ -1,5 +1,6 @@
 import React from 'react';
 import { IconSettings, IconSparkles } from './Icons';
+import { useI18n } from '../i18n';
 
 interface HomeScreenProps {
   onStartCall: () => void;
@@ -16,6 +17,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onConfigureApiKey,
   isConnecting = false
 }) => {
+  const { t } = useI18n();
+
   return (
     <div className="flex flex-col h-full bg-white text-gray-900 relative overflow-hidden">
 
@@ -43,8 +46,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <div className="flex-1 flex flex-col items-center justify-center z-10 pb-20">
 
         <div className="text-center mb-12 space-y-2">
-          <h2 className="text-3xl font-bold text-slate-800">Hi, I'm Gemini.</h2>
-          <p className="text-slate-500 text-lg">How can I help you today?</p>
+          <h2 className="text-3xl font-bold text-slate-800">{t('home.greetingTitle')}</h2>
+          <p className="text-slate-500 text-lg">{t('home.greetingSubtitle')}</p>
         </div>
 
         {/* API Key Warning */}
@@ -54,7 +57,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             className="mb-6 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer hover:bg-amber-100 transition-colors"
           >
             <p className="text-amber-700 text-sm font-medium text-center">
-              ⚠️ No API key configured. Tap to set up.
+              {t('home.apiKeyWarning')}
             </p>
           </div>
         )}
@@ -85,7 +88,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
 
         <p className="mt-10 text-sm font-medium text-slate-400 uppercase tracking-widest animate-pulse">
-          {isConnecting ? 'Connecting...' : hasApiKey ? 'Tap to speak' : 'Configure API key first'}
+          {isConnecting ? t('home.connecting') : hasApiKey ? t('home.tapToSpeak') : t('home.configureApiKey')}
         </p>
       </div>
 

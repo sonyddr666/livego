@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { HistoryItem } from '../types';
 import { IconChevronLeft, IconTrash, IconClock, IconUser, IconSparkles } from './Icons';
+import { useI18n } from '../i18n';
 
 interface HistoryScreenProps {
   history: HistoryItem[];
@@ -14,17 +15,18 @@ interface ChatMessage {
 }
 
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, onDelete }) => {
+  const { t } = useI18n();
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
 
   // Helper to parse the raw transcript string into chat messages
   const parsedMessages = useMemo(() => {
     if (!selectedItem || !selectedItem.transcript) return [];
-    
+
     const messages: ChatMessage[] = [];
-    
+
     // The transcript format is expected to be "User: ... \nGemini: ... \nUser: ..."
     // We split by the known labels.
-    
+
     const rawText = selectedItem.transcript;
     // Regex to find "User:" or "Gemini:" at the start of a line (or start of string)
     const parts = rawText.split(/(?=\nUser: )|(?=\nGemini: )|^User: |^Gemini: /).filter(p => p.trim());
@@ -66,7 +68,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
       <div className="flex flex-col h-full bg-[#f3f4f6]">
         {/* Detail Header */}
         <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
-            <button onClick={() => setSelectedItem(null)} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+            <button type="button" onClick={() => setSelectedItem(null)} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
                 <IconChevronLeft className="w-6 h-6" />
             </button>
             <div className="flex-1 text-center mr-8">
@@ -78,11 +80,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
         {/* Chat Bubble View */}
         <div className="flex-1 p-4 overflow-y-auto bg-[#f3f4f6] space-y-4">
             {parsedMessages.length === 0 ? (
-                <div className="text-center text-gray-400 mt-10 italic">No transcript available.</div>
+                <div className="text-center text-gray-400 mt-10 italic">{t('history.emptyTranscript')}</div>
             ) : (
                 parsedMessages.map((msg, idx) => (
                     <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        
+
                         {/* Avatar for Gemini */}
                         {msg.role === 'gemini' && (
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white shadow-sm mr-2 mt-1 shrink-0">
@@ -119,11 +121,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
   return (
     <div className="flex flex-col h-full bg-[#f3f4f6]">
       <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-        <button onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+        <button type="button" onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
           <IconChevronLeft className="w-6 h-6" />
         </button>
         <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">
-          Call History
+          {t('history.title')}
         </h1>
       </div>
 
@@ -131,7 +133,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
         {history.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
                 <IconClock className="w-16 h-16 mb-4" />
-                <p>No history yet</p>
+                <p>{t('history.empty')}</p>
             </div>
         ) : (
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
@@ -149,7 +151,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                             <p className="text-xs text-gray-500">{item.duration}</p>
                         </div>
                         <button 
+                            type="button"
                             onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                            aria-label={t('history.delete')}
                             className="p-2 text-gray-400 hover:text-red-500 transition-colors"
                         >
                             <IconTrash className="w-5 h-5" />
