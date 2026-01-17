@@ -41,7 +41,6 @@ function buildAdvancedSystemInstruction(baseInstruction: string): string {
 CAPACIDADES AVANÇADAS (use silenciosamente):
 1. Acesso a histórico de conversas (functions)
 2. Busca na web em tempo real (Google Search)
-3. Detecção emocional em segundo plano
 
 INÍCIO DE CONVERSA:
 - Chame get_conversation_history(days=7) para entender o contexto
@@ -54,20 +53,8 @@ BUSCA NA WEB (Google Search):
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
 - Cite as fontes quando relevante
 
-SOBRE EMOÇÕES (OBRIGATÓRIO):
-- A CADA INTERAÇÃO: Avalie o tom emocional do usuário (happy, sad, anxious, angry, calm, neutral)
-- SEMPRE chame save_emotional_note() após detectar qualquer emoção, com:
-  * emotion: a emoção detectada
-  * intensity: de 1 a 10
-  * trigger: o que parece ter causado (se mencionado)
-  * note: breve contexto
-- FAÇA ISSO SILENCIOSAMENTE - não mencione que está salvando
-- NÃO comente sobre emoções constantemente na conversa
-- Só fale sobre emoções se o usuário perguntar ou parecer em crise
-
 PADRÕES PARA FUNCTIONS:
 - Histórico genérico → 30 dias
-- "Como tenho me sentido" → 7 dias + get_emotion_statistics
 - "Última conversa" → 1 dia
 - NÃO pergunte qual período - use os padrões acima`;
 }
@@ -236,43 +223,39 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   days: {
                     type: 'number',
                     description: 'Número de dias retroativos (ex: 7 para última semana, 30 para último mês)'
-                  },
-                  emotionFilter: {
-                    type: 'string',
-                    description: 'Filtrar por emoção: happy, sad, anxious, angry, calm, neutral, all',
-                    enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral', 'all']
                   }
                 },
                 required: ['days']
               }
             },
-            {
-              name: 'save_emotional_note',
-              description: 'Salva uma observação sobre o estado emocional atual do usuário para análise futura.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  emotion: {
-                    type: 'string',
-                    description: 'Emoção detectada na voz ou mencionada pelo usuário',
-                    enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral']
-                  },
-                  intensity: {
-                    type: 'number',
-                    description: 'Intensidade de 1 (leve) a 10 (extremo)'
-                  },
-                  trigger: {
-                    type: 'string',
-                    description: 'O que causou essa emoção, se mencionado pelo usuário'
-                  },
-                  note: {
-                    type: 'string',
-                    description: 'Observações adicionais sobre o contexto emocional'
-                  }
-                },
-                required: ['emotion', 'intensity']
-              }
-            },
+            // TEMPORARILY DISABLED - save_emotional_note
+            // {
+            //   name: 'save_emotional_note',
+            //   description: 'Salva uma observação sobre o estado emocional atual do usuário para análise futura.',
+            //   parameters: {
+            //     type: 'object',
+            //     properties: {
+            //       emotion: {
+            //         type: 'string',
+            //         description: 'Emoção detectada na voz ou mencionada pelo usuário',
+            //         enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral']
+            //       },
+            //       intensity: {
+            //         type: 'number',
+            //         description: 'Intensidade de 1 (leve) a 10 (extremo)'
+            //       },
+            //       trigger: {
+            //         type: 'string',
+            //         description: 'O que causou essa emoção, se mencionado pelo usuário'
+            //       },
+            //       note: {
+            //         type: 'string',
+            //         description: 'Observações adicionais sobre o contexto emocional'
+            //       }
+            //     },
+            //     required: ['emotion', 'intensity']
+            //   }
+            // },
             {
               name: 'get_time_patterns',
               description: 'Analisa em quais horários ou dias da semana o usuário conversa mais e com quais emoções.',
