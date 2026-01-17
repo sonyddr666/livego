@@ -12,7 +12,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
     "type-check": "tsc --noEmit",
     "analyze": "vite-bundle-visualizer",
-    "prepare": "husky install"
+    "prepare": "node -e \"try{require('husky').install()}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e}\""
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
