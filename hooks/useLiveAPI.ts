@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig } from '../types';
+import { handleToolCall } from '../utils/dataFunctions';
 
 // AudioWorklet processor code as a string to avoid external file loading issues
 const workletCode = `
@@ -32,6 +33,36 @@ class PCMProcessor extends AudioWorkletProcessor {
 }
 registerProcessor('pcm-processor', PCMProcessor);
 `;
+
+// Build enhanced system instruction for advanced features
+function buildAdvancedSystemInstruction(baseInstruction: string): string {
+  return `${baseInstruction}
+
+CAPACIDADES AVANÇADAS ATIVAS:
+1. Detecção emocional por voz (affective dialog) - você pode perceber o tom emocional do usuário
+2. Análise estatística (Python com numpy, pandas, scipy) - use code execution para cálculos
+3. Acesso a histórico do usuário (functions) - busque dados quando precisar
+
+COMPORTAMENTO:
+- SEMPRE mencione emoções que você detectar na voz ("Percebo um tom de...")
+- Use estatísticas para insights profundos quando perguntado
+- Adapte seu tom baseado no estado emocional do usuário:
+  * Ansioso → tom calmo, pausado, sugira respiração
+  * Triste → empatia, validação de sentimentos
+  * Feliz → reforce positividade, mantenha energia
+
+QUANDO USAR CODE EXECUTION:
+- Calcular médias, tendências, correlações
+- Identificar padrões estatísticos
+- Fazer previsões simples
+
+QUANDO USAR FUNCTIONS:
+- Buscar histórico de conversas (get_conversation_history)
+- Salvar observações emocionais (save_emotional_note)
+- Analisar padrões temporais (get_time_patterns)
+- Buscar por tópico (search_conversation_topic)
+- Estatísticas de emoções (get_emotion_statistics)`;
+}
 
 interface UseLiveAPIResult {
   connected: boolean;
@@ -178,6 +209,114 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+      // Build tools array based on config
+      const tools: any[] = [];
+
+      if (config.enableAdvancedFeatures) {
+        // Code Execution - allows Gemini to run Python code
+        tools.push({ codeExecution: {} });
+
+        // Function Calling - allows Gemini to access user data
+        tools.push({
+          functionDeclarations: [
+            {
+              name: 'get_conversation_history',
+              description: 'Busca histórico de conversas do usuário por período. Retorna estatísticas e lista de conversas.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  days: {
+                    type: 'number',
+                    description: 'Número de dias retroativos (ex: 7 para última semana, 30 para último mês)'
+                  },
+                  emotionFilter: {
+                    type: 'string',
+                    description: 'Filtrar por emoção: happy, sad, anxious, angry, calm, neutral, all',
+                    enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral', 'all']
+                  }
+                },
+                required: ['days']
+              }
+            },
+            {
+              name: 'save_emotional_note',
+              description: 'Salva uma observação sobre o estado emocional atual do usuário para análise futura.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  emotion: {
+                    type: 'string',
+                    description: 'Emoção detectada na voz ou mencionada pelo usuário',
+                    enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral']
+                  },
+                  intensity: {
+                    type: 'number',
+                    description: 'Intensidade de 1 (leve) a 10 (extremo)'
+                  },
+                  trigger: {
+                    type: 'string',
+                    description: 'O que causou essa emoção, se mencionado pelo usuário'
+                  },
+                  note: {
+                    type: 'string',
+                    description: 'Observações adicionais sobre o contexto emocional'
+                  }
+                },
+                required: ['emotion', 'intensity']
+              }
+            },
+            {
+              name: 'get_time_patterns',
+              description: 'Analisa em quais horários ou dias da semana o usuário conversa mais e com quais emoções.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  analysisType: {
+                    type: 'string',
+                    description: 'Tipo de análise temporal',
+                    enum: ['hourly', 'daily']
+                  }
+                },
+                required: ['analysisType']
+              }
+            },
+            {
+              name: 'search_conversation_topic',
+              description: 'Busca conversas anteriores sobre um tema específico mencionado pelo usuário.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  topic: {
+                    type: 'string',
+                    description: 'Tema a buscar (ex: trabalho, família, ansiedade, sono)'
+                  },
+                  limit: {
+                    type: 'number',
+                    description: 'Máximo de resultados a retornar'
+                  }
+                },
+                required: ['topic']
+              }
+            },
+            {
+              name: 'get_emotion_statistics',
+              description: 'Retorna estatísticas agregadas sobre emoções registradas do usuário.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  period: {
+                    type: 'string',
+                    description: 'Período de análise',
+                    enum: ['today', 'week', 'month', 'all']
+                  }
+                },
+                required: ['period']
+              }
+            }
+          ]
+        });
+      }
+
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
@@ -279,6 +418,40 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
             }
+
+            // Handle Tool Calls (Function Calling)
+            const toolCall = (message as any).toolCall;
+            if (toolCall && config.enableAdvancedFeatures) {
+              console.log('🔧 Tool call received:', toolCall);
+              for (const functionCall of toolCall.functionCalls || []) {
+                try {
+                  const result = await handleToolCall({
+                    name: functionCall.name,
+                    args: functionCall.args
+                  });
+
+                  // Send tool response back to Gemini
+                  sessionPromise.then(session => {
+                    // Use sendToolResponse if available, or fallback approach
+                    const toolResponse = {
+                      functionResponses: [{
+                        id: functionCall.id,
+                        name: functionCall.name,
+                        response: result
+                      }]
+                    };
+                    if (typeof session.sendToolResponse === 'function') {
+                      session.sendToolResponse(toolResponse);
+                    } else {
+                      // Fallback: try sending as message
+                      console.log('Tool response:', toolResponse);
+                    }
+                  });
+                } catch (error) {
+                  console.error('Tool call error:', error);
+                }
+              }
+            }
           },
           onclose: () => {
             console.log("Live Session Closed");
@@ -293,10 +466,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: config.systemInstruction,
+          systemInstruction: config.enableAdvancedFeatures
+            ? buildAdvancedSystemInstruction(config.systemInstruction)
+            : config.systemInstruction,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } }
-          }
+          },
+          ...(tools.length > 0 && { tools })
         }
       });
 
