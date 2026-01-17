@@ -40,13 +40,19 @@ function buildAdvancedSystemInstruction(baseInstruction: string): string {
 
 CAPACIDADES AVANÇADAS (use silenciosamente):
 1. Acesso a histórico de conversas (functions)
-2. Análise estatística com Python (code execution)
+2. Busca na web em tempo real (Google Search)
 3. Detecção emocional em segundo plano
 
 INÍCIO DE CONVERSA:
 - Chame get_conversation_history(days=7) para entender o contexto
 - Use o histórico para uma saudação personalizada se houver conversas anteriores
 - Seja natural, não mencione que está "buscando dados" ou "analisando"
+
+BUSCA NA WEB (Google Search):
+- Se o usuário perguntar sobre notícias, eventos atuais, preços, clima, ou qualquer informação que possa mudar com o tempo, USE A BUSCA
+- NÃO invente informações - se não tiver certeza, busque
+- Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
+- Cite as fontes quando relevante
 
 SOBRE EMOÇÕES (OBRIGATÓRIO):
 - A CADA INTERAÇÃO: Avalie o tom emocional do usuário (happy, sad, anxious, angry, calm, neutral)
@@ -63,12 +69,7 @@ PADRÕES PARA FUNCTIONS:
 - Histórico genérico → 30 dias
 - "Como tenho me sentido" → 7 dias + get_emotion_statistics
 - "Última conversa" → 1 dia
-- NÃO pergunte qual período - use os padrões acima
-
-QUANDO USAR CODE EXECUTION:
-- Cálculos estatísticos (médias, tendências)
-- Quando o usuário pedir análises numéricas
-- Identificar padrões em dados`;
+- NÃO pergunte qual período - use os padrões acima`;
 }
 
 interface UseLiveAPIResult {
@@ -220,8 +221,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const tools: any[] = [];
 
       if (config.enableAdvancedFeatures) {
-        // Code Execution - allows Gemini to run Python code
-        tools.push({ codeExecution: {} });
+        // Google Search - allows Gemini to search the web for current information
+        tools.push({ googleSearch: {} });
 
         // Function Calling - allows Gemini to access user data
         tools.push({
