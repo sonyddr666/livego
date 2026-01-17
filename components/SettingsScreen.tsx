@@ -6,7 +6,7 @@ import type { VoiceConfig } from '../config/voices';
 import { useI18n } from '../i18n';
 import type { Locale, TranslationKey } from '../i18n';
 
-const APP_VERSION = '1.0.8';
+const APP_VERSION = '1.0.9';
 const LANGUAGE_OPTIONS: { id: Locale; labelKey: TranslationKey }[] = [
     { id: 'en', labelKey: 'language.name.en' },
     { id: 'pt-BR', labelKey: 'language.name.pt-BR' },
