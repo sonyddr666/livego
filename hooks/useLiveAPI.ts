@@ -363,6 +363,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
           },
           onmessage: async (message: LiveServerMessage) => {
+            // Debug: Log all incoming messages to see Google Search grounding data
+            const msgAny = message as any;
+            if (msgAny.groundingMetadata) {
+              console.log('🔍 Google Search grounding:', msgAny.groundingMetadata);
+            }
+            if (msgAny.serverContent?.groundingMetadata) {
+              console.log('🔍 Google Search grounding (serverContent):', msgAny.serverContent.groundingMetadata);
+            }
+            // Uncomment below to see ALL messages:
+            // console.log('📨 Live message:', message);
+
             // Handle Input Transcription (User)
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
