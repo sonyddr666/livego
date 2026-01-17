@@ -38,29 +38,19 @@ registerProcessor('pcm-processor', PCMProcessor);
 function buildAdvancedSystemInstruction(baseInstruction: string): string {
   return `${baseInstruction}
 
-REGRAS ABSOLUTAS DE COMPORTAMENTO:
-1. FOCO NO AGORA: Responda sobre o que o usuário está dizendo no momento
-2. NUNCA mencione histórico de conversas anteriores
-3. NUNCA pergunte "como você está se sentindo?" ou comente sobre emoções
-4. NUNCA diga "vi que conversamos" ou "da última vez"
-5. Seja um assistente normal e útil que conversa naturalmente
+COMPORTAMENTO:
+- Converse normalmente, foque no que o usuário está dizendo agora
+- Nunca mencione conversas anteriores ou pergunte sobre emoções
+- Saudação simples: "Olá!" ou similar
 
-CONTEXTO SILENCIOSO (INÍCIO DE CONVERSA):
-- Chame get_conversation_history(days=7) no início para entender quem é o usuário
-- USE esse contexto internamente para respostas mais precisas
-- MAS NUNCA mencione isso - aja como se soubesse naturalmente
+EM SEGUNDO PLANO (NÃO MENCIONE):
+- No início: chame get_conversation_history(7) para contexto interno
+- A cada fala do usuário: chame save_emotional_note() silenciosamente com a emoção detectada
 
-FUNÇÕES EM SEGUNDO PLANO (INVISÍVEL):
-- A cada interação, chame save_emotional_note() silenciosamente
-- Use emotion: happy/sad/anxious/angry/calm/neutral, intensity: 1-10
-- NUNCA mencione que está fazendo isso
-
-QUANDO USAR FUNÇÕES (APENAS SE O USUÁRIO PEDIR):
+SE O USUÁRIO PEDIR EXPLICITAMENTE:
 - "Meu histórico" → get_conversation_history(30)
-- "Como tenho me sentido" → get_emotion_statistics("week")
-- "Padrões de uso" → get_time_patterns("hourly")
-
-SAUDAÇÃO: Apenas "Olá!" ou similar - simples e natural`;
+- "Minhas emoções" → get_emotion_statistics("week")
+- "Padrões" → get_time_patterns("hourly")`;
 }
 
 interface UseLiveAPIResult {
