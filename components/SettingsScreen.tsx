@@ -122,7 +122,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                     <button className="text-red-500 text-sm font-semibold py-3 px-8 rounded-xl bg-white shadow-sm border border-gray-100 active:bg-red-50 w-full transition-colors">
                         Log Out
                     </button>
-                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION 1.02</p>
+                    <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">VERSION 1.0.7</p>
                 </div>
             </div>
         </div>
@@ -349,7 +349,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                         <IconSparkles className="w-8 h-8" />
                     </div>
                     <h2 className="text-xl font-bold text-gray-900">LIVEGO</h2>
-                    <p className="text-gray-400 mb-8">Version 1.02 (Beta)</p>
+                    <p className="text-gray-400 mb-8">Version 1.0.7 (Beta)</p>
 
                     <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                         <p className="text-sm text-gray-600 text-center leading-relaxed">
