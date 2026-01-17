@@ -78,7 +78,7 @@ const App: React.FC = () => {
       return;
     }
     startTimeRef.current = Date.now();
-    await connect({ voiceName, systemInstruction, apiKey });
+    await connect({ voiceName, systemInstruction, apiKey, enableAdvancedFeatures: true });
     // Navigation to USAGE happens after connection is established? 
     // Or optimistically?
     // Given we have `isConnecting`, let's wait or show loading on Home.

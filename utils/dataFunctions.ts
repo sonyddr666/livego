@@ -38,6 +38,29 @@ function extractRelevantExcerpt(text: string, topic: string, context: number = 5
     return '...' + text.substring(start, end) + '...';
 }
 
+// Helper: Parse Brazilian date format "dd/mm/yyyy, HH:MM:SS" to Date
+function parseBrazilianDate(dateStr: string): Date {
+    try {
+        // Format: "16/01/2026, 23:08:13"
+        const [datePart, timePart] = dateStr.split(', ');
+        if (!datePart || !timePart) return new Date(dateStr); // fallback
+
+        const dateParts = datePart.split('/').map(Number);
+        const timeParts = timePart.split(':').map(Number);
+
+        const day = dateParts[0] || 1;
+        const month = dateParts[1] || 1;
+        const year = dateParts[2] || 2026;
+        const hours = timeParts[0] || 0;
+        const minutes = timeParts[1] || 0;
+        const seconds = timeParts[2] || 0;
+
+        return new Date(year, month - 1, day, hours, minutes, seconds);
+    } catch {
+        return new Date(dateStr); // fallback to default parsing
+    }
+}
+
 // Helper: Parse history items to ConversationEntry format
 function parseHistoryToEntries(): ConversationEntry[] {
     try {
@@ -45,14 +68,19 @@ function parseHistoryToEntries(): ConversationEntry[] {
         if (!saved) return [];
 
         const history = JSON.parse(saved);
-        return history.map((item: any) => ({
+        console.log('📜 Raw history from localStorage:', history);
+
+        const entries = history.map((item: any) => ({
             id: item.id,
-            timestamp: item.date,
+            timestamp: parseBrazilianDate(item.date).toISOString(), // Convert to ISO format
             duration: parseDurationToMinutes(item.duration),
-            transcript: item.transcript,
+            transcript: item.transcript || '',
             emotion: item.emotion || 'unknown',
             intensity: item.intensity || 5
         }));
+
+        console.log('📜 Parsed entries:', entries);
+        return entries;
     } catch (error) {
         console.error('Failed to parse history:', error);
         return [];

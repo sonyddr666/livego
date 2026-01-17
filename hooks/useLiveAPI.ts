@@ -432,7 +432,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
                   // Send tool response back to Gemini
                   sessionPromise.then(session => {
-                    // Use sendToolResponse if available, or fallback approach
                     const toolResponse = {
                       functionResponses: [{
                         id: functionCall.id,
@@ -440,12 +439,22 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         response: result
                       }]
                     };
-                    if (typeof session.sendToolResponse === 'function') {
-                      session.sendToolResponse(toolResponse);
+
+                    console.log('📤 Sending tool response:', toolResponse);
+
+                    // Try different methods based on SDK version
+                    if (typeof (session as any).sendToolResponse === 'function') {
+                      (session as any).sendToolResponse(toolResponse);
+                    } else if (typeof (session as any).send === 'function') {
+                      // Alternative: send as client content
+                      (session as any).send({ toolResponse });
+                    } else if (typeof (session as any).sendClientContent === 'function') {
+                      (session as any).sendClientContent({ toolResponse });
                     } else {
-                      // Fallback: try sending as message
-                      console.log('Tool response:', toolResponse);
+                      console.warn('⚠️ No valid method to send tool response. Available methods:', Object.keys(session));
                     }
+                  }).catch(err => {
+                    console.error('Error sending tool response:', err);
                   });
                 } catch (error) {
                   console.error('Tool call error:', error);
