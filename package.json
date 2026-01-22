@@ -1,7 +1,7 @@
 {
   "name": "livego-voice-app",
   "private": true,
-  "version": "1.0.11",
+  "version": "1.0.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,8 @@
   "dependencies": {
     "@google/genai": "^1.30.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

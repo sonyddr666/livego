@@ -10,7 +10,7 @@ class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buffer = [];
-    this.bufferSize = 4096;
+    this.bufferSize = 2048; // Reduced from 4096 for lower latency
   }
 
   process(inputs, outputs, parameters) {
@@ -100,6 +100,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
+  // Audio queue for smooth playback (Google recommended architecture)
+  const audioQueueRef = useRef<string[]>([]);
+  const isProcessingQueueRef = useRef(false);
+
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
@@ -132,6 +136,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     });
     sourcesRef.current.clear();
 
+    // Clear audio queue
+    audioQueueRef.current = [];
+    isProcessingQueueRef.current = false;
+
     if (sessionPromiseRef.current) {
       sessionPromiseRef.current.then(session => {
         try { session.close(); } catch (e) { }
@@ -159,6 +167,53 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       }
       return newValue;
     });
+  }, []);
+
+  // Async playback loop - processes audio queue without blocking onmessage
+  const processAudioQueue = useCallback(async (outputNode: GainNode) => {
+    const ctx = outputAudioContextRef.current;
+    if (!ctx) {
+      isProcessingQueueRef.current = false;
+      return;
+    }
+
+    while (audioQueueRef.current.length > 0) {
+      const base64Audio = audioQueueRef.current.shift();
+      if (!base64Audio) continue;
+
+      try {
+        // Decode audio at 24kHz (Gemini's output rate)
+        let audioBuffer = await decodeAudioData(
+          base64ToUint8Array(base64Audio),
+          ctx,
+          24000,
+          1
+        );
+
+        // Resample to system's native sample rate if different
+        if (ctx.sampleRate !== 24000) {
+          audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
+        }
+
+        // Schedule playback
+        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(outputNode);
+        source.addEventListener('ended', () => {
+          sourcesRef.current.delete(source);
+        });
+
+        source.start(nextStartTimeRef.current);
+        nextStartTimeRef.current += audioBuffer.duration;
+        sourcesRef.current.add(source);
+      } catch (error) {
+        console.error('Audio decode error:', error);
+      }
+    }
+
+    isProcessingQueueRef.current = false;
   }, []);
 
   const connect = useCallback(async (config: LiveConfig) => {
@@ -383,40 +438,25 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
 
-            // Handle Audio Output
+            // Handle Audio Output - Add to queue instead of processing directly
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputAudioContextRef.current) {
-              const ctx = outputAudioContextRef.current;
+              // Add to queue for async processing
+              audioQueueRef.current.push(base64Audio);
 
-              // Decode audio at 24kHz (Gemini's output rate)
-              let audioBuffer = await decodeAudioData(
-                base64ToUint8Array(base64Audio),
-                ctx,
-                24000,
-                1
-              );
-
-              // Resample to system's native sample rate if different
-              if (ctx.sampleRate !== 24000) {
-                audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
+              // Process queue if not already processing
+              if (!isProcessingQueueRef.current) {
+                isProcessingQueueRef.current = true;
+                processAudioQueue(outputNode);
               }
-
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-
-              const source = ctx.createBufferSource();
-              source.buffer = audioBuffer;
-              source.connect(outputNode);
-              source.addEventListener('ended', () => {
-                sourcesRef.current.delete(source);
-              });
-
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += audioBuffer.duration;
-              sourcesRef.current.add(source);
             }
 
             if (message.serverContent?.interrupted) {
-              sourcesRef.current.forEach(src => src.stop());
+              // Clear queue immediately on interruption
+              audioQueueRef.current = [];
+              sourcesRef.current.forEach(src => {
+                try { src.stop(); } catch (e) { }
+              });
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
             }
