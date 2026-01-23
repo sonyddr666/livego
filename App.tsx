@@ -5,7 +5,7 @@ import { UsageScreen } from './components/UsageScreen';
 import { SettingsScreen, SettingsDetailScreen } from './components/SettingsScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Onboarding, hasCompletedOnboarding } from './components/Onboarding';
+
 import { useLiveAPI } from './hooks/useLiveAPI';
 import { useI18n } from './i18n';
 
@@ -15,7 +15,7 @@ const API_KEY_STORAGE_KEY = 'gemini_api_key';
 const App: React.FC = () => {
   const { t, locale } = useI18n();
   const [currentScreen, setCurrentScreen] = useState<ScreenName>(ScreenName.HOME);
-  const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
+
 
   // Settings State
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
@@ -135,11 +135,6 @@ const App: React.FC = () => {
 
           {/* Inner Screen Content */}
           <div className="w-full h-full bg-white overflow-hidden md:rounded-[32px]">
-            {/* Onboarding Overlay */}
-            {showOnboarding && (
-              <Onboarding onComplete={() => setShowOnboarding(false)} />
-            )}
-
             {currentScreen === ScreenName.HOME && (
               <HomeScreen
                 onStartCall={handleStartCall}
