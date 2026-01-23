@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 
 interface VisualizerProps {
     analysers?: {
@@ -8,7 +8,7 @@ interface VisualizerProps {
     isMuted: boolean;
 }
 
-export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) => {
+const VisualizerComponent: React.FC<VisualizerProps> = ({ analysers, isMuted }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationRef = useRef<number>(0);
 
@@ -24,17 +24,17 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) =>
             const height = canvas.height;
             const centerX = width / 2;
             const centerY = height / 2;
-            
+
             // Clear with a slight fade for trail effect
             ctx.clearRect(0, 0, width, height);
 
             // Frequency data array
-            const freqData = new Uint8Array(128); 
+            const freqData = new Uint8Array(128);
             let averageVolume = 0;
             let hasSignal = false;
 
             // 1. Calculate Volume/Energy
-            
+
             // Output (Gemini talking) - Always visualize if present
             if (analysers?.output) {
                 analysers.output.getByteFrequencyData(freqData);
@@ -51,7 +51,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) =>
                 analysers.input.getByteFrequencyData(inputData);
                 const sum = inputData.reduce((a, b) => a + b, 0);
                 const inputAvg = sum / inputData.length;
-                
+
                 // If Gemini is quiet, use user input. If Gemini talking, mix slightly.
                 if (inputAvg > 0) {
                     averageVolume = hasSignal ? Math.max(averageVolume, inputAvg * 0.8) : inputAvg;
@@ -61,10 +61,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) =>
             // 2. Base Size & Dynamic Pulse
             // Normalize volume (0-255) to a scale factor (0-1)
             const intensity = averageVolume / 255;
-            
+
             // Smooth "breathing" animation (idle state)
             const time = Date.now() / 1000;
-            const breathing = Math.sin(time * 2) * 3; 
+            const breathing = Math.sin(time * 2) * 3;
 
             const baseRadius = 45;
             const dynamicRadius = baseRadius + (intensity * 50) + breathing;
@@ -88,11 +88,11 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) =>
             ctx.fillStyle = `rgba(${glowColor}, ${0.8 + intensity * 0.2})`;
             ctx.shadowBlur = 20 + (intensity * 40);
             ctx.shadowColor = `rgb(${outerColor})`;
-            
+
             ctx.beginPath();
             ctx.arc(centerX, centerY, dynamicRadius, 0, Math.PI * 2);
             ctx.fill();
-            
+
             // Reset shadow
             ctx.shadowBlur = 0;
 
@@ -108,12 +108,16 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analysers, isMuted }) =>
 
     return (
         <div className="relative flex items-center justify-center w-full h-[300px]">
-            <canvas 
-                ref={canvasRef} 
-                width={340} 
-                height={300} 
+            <canvas
+                ref={canvasRef}
+                width={340}
+                height={300}
                 className="w-full h-full max-w-[340px]"
+                aria-label="Audio visualizer"
+                role="img"
             />
         </div>
     );
 };
+
+export const Visualizer = memo(VisualizerComponent);

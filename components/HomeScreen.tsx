@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { IconSettings, IconSparkles } from './Icons';
 import { useI18n } from '../i18n';
 
@@ -10,10 +10,10 @@ interface HomeScreenProps {
   isConnecting?: boolean;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ 
-  onStartCall, 
-  onSettings, 
-  hasApiKey = true, 
+const HomeScreenComponent: React.FC<HomeScreenProps> = ({
+  onStartCall,
+  onSettings,
+  hasApiKey = true,
   onConfigureApiKey,
   isConnecting = false
 }) => {
@@ -37,6 +37,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onClick={onSettings}
           disabled={isConnecting}
           className="p-3 rounded-full hover:bg-gray-100 active:scale-95 transition-all text-gray-500"
+          aria-label="Settings"
         >
           <IconSettings className="w-6 h-6" />
         </button>
@@ -54,6 +55,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {!hasApiKey && (
           <div
             onClick={onConfigureApiKey}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onConfigureApiKey?.()}
             className="mb-6 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer hover:bg-amber-100 transition-colors"
           >
             <p className="text-amber-700 text-sm font-medium text-center">
@@ -72,17 +76,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <button
             onClick={onStartCall}
             disabled={isConnecting || !hasApiKey}
+            aria-label={isConnecting ? 'Connecting' : 'Start conversation'}
             className={`relative w-40 h-40 rounded-full flex items-center justify-center shadow-[0_20px_50px_rgba(37,99,235,0.4)] transition-all duration-300 transform 
                 ${isConnecting ? 'bg-white border-4 border-indigo-200 cursor-wait' : 'bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 hover:scale-105 active:scale-95 border-4 border-white/10'} 
                 ${!hasApiKey ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
             `}
           >
             {isConnecting ? (
-                <div className="relative">
-                    <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                </div>
+              <div className="relative">
+                <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+              </div>
             ) : (
-                <IconSparkles className="w-16 h-16 text-white" />
+              <IconSparkles className="w-16 h-16 text-white" />
             )}
           </button>
         </div>
@@ -95,3 +100,5 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     </div>
   );
 };
+
+export const HomeScreen = memo(HomeScreenComponent);

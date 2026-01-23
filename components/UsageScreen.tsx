@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, memo } from 'react';
 import { Visualizer } from './Visualizer';
 import { IconMic, IconMicOff, IconPhoneOff, IconVolume2, IconSettings } from './Icons';
 import { useI18n } from '../i18n';
@@ -15,14 +15,14 @@ interface UsageScreenProps {
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
-export const UsageScreen: React.FC<UsageScreenProps> = ({
+const UsageScreenComponent: React.FC<UsageScreenProps> = ({
   onEndCall,
-  onSettings,
+  onSettings: _onSettings,
   isMuted,
   toggleMute,
   isSpeakerOn,
   toggleSpeaker,
-  volume,
+  volume: _volume,
   caption,
   getAnalysers
 }) => {
@@ -67,16 +67,17 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
       {/* Header */}
       <div className="flex justify-between items-center px-8 pt-12 pb-6 relative z-10">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />
           <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">{t('usage.live')}</span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-gray-400 font-mono text-sm tracking-wider">{formatTime(seconds)}</span>
+          <span className="text-gray-400 font-mono text-sm tracking-wider" aria-live="polite">{formatTime(seconds)}</span>
         </div>
         <button
           disabled
           className="p-2 rounded-full transition-colors text-gray-600 opacity-30 cursor-not-allowed"
           title={t('usage.settingsDisabled')}
+          aria-label="Settings disabled during call"
         >
           <IconSettings className="w-6 h-6" />
         </button>
@@ -97,6 +98,8 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
         <div
           ref={captionRef}
           className="glass-dark rounded-xl px-5 py-3 max-w-[85%] md:max-w-[320px] pointer-events-auto max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth"
+          role="log"
+          aria-live="polite"
         >
           <p className="text-center text-[13px] font-medium leading-relaxed text-gray-100 whitespace-pre-wrap">
             {localizedCaption}
@@ -111,6 +114,8 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
           {/* Mute Toggle */}
           <button
             onClick={toggleMute}
+            aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+            aria-pressed={isMuted}
             className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isMuted ? 'text-red-400' : 'text-white'}`}
           >
             <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-red-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
@@ -124,6 +129,7 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
           {/* End Call */}
           <button
             onClick={onEndCall}
+            aria-label="End call"
             className="flex flex-col items-center gap-1.5 active:scale-95"
           >
             <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500 shadow-lg shadow-red-500/30 text-white transition-transform hover:scale-105">
@@ -135,6 +141,8 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
           {/* Speaker Toggle */}
           <button
             onClick={toggleSpeaker}
+            aria-label={isSpeakerOn ? 'Turn off speaker' : 'Turn on speaker'}
+            aria-pressed={isSpeakerOn}
             className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isSpeakerOn ? 'text-blue-400' : 'text-white'}`}
           >
             <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isSpeakerOn ? 'bg-blue-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
@@ -151,3 +159,5 @@ export const UsageScreen: React.FC<UsageScreenProps> = ({
     </div>
   );
 };
+
+export const UsageScreen = memo(UsageScreenComponent);

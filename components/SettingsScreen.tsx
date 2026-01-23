@@ -5,8 +5,9 @@ import { AVAILABLE_VOICES } from '../config/voices';
 import type { VoiceConfig } from '../config/voices';
 import { useI18n } from '../i18n';
 import type { Locale, TranslationKey } from '../i18n';
+import { useThemeStore } from '../store/themeStore';
 
-const APP_VERSION = '1.0.12';
+const APP_VERSION = '1.0.13';
 const LANGUAGE_OPTIONS: { id: Locale; labelKey: TranslationKey }[] = [
     { id: 'en', labelKey: 'language.name.en' },
     { id: 'pt-BR', labelKey: 'language.name.pt-BR' },
@@ -86,6 +87,8 @@ const ToggleRow: React.FC<{
 export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, currentVoice }) => {
     const { t, locale } = useI18n();
     const currentLanguageLabel = t(`language.name.${locale}` as TranslationKey);
+    const { theme, setTheme } = useThemeStore();
+    const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     return (
         <div className="flex flex-col h-full bg-[#f3f4f6]">
@@ -136,6 +139,12 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                         value={currentLanguageLabel}
                         color="bg-emerald-500"
                         onClick={() => onNavigate(ScreenName.LANGUAGE)}
+                    />
+                    <ToggleRow
+                        label="Dark Mode"
+                        description={isDarkMode ? 'Tema escuro ativado' : 'Tema claro ativado'}
+                        checked={isDarkMode}
+                        onChange={(checked) => setTheme(checked ? 'dark' : 'light')}
                     />
                     <SettingsItem
                         icon={<IconBell />}

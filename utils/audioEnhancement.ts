@@ -114,7 +114,8 @@ export function createEnhancementChain(
 export function calculateRMSVolume(buffer: Float32Array): number {
     let sum = 0;
     for (let i = 0; i < buffer.length; i++) {
-        sum += buffer[i] * buffer[i];
+        const sample = buffer[i]!;
+        sum += sample * sample;
     }
     return Math.sqrt(sum / buffer.length);
 }
