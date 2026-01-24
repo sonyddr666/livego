@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import type { Locale, TranslationKey } from '../i18n';
 import { useThemeStore } from '../store/themeStore';
 import { useInstructionPresets, type InstructionPreset } from '../store/instructionPresetsStore';
+import { useSettingsStore } from '../store/settingsStore';
 
 // Instructions Screen with Presets Component
 const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -128,8 +129,8 @@ const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBac
                                 <button
                                     onClick={() => selectPreset(preset.id)}
                                     className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedPresetId === preset.id
-                                            ? 'border-blue-500 bg-blue-500'
-                                            : 'border-theme-secondary'
+                                        ? 'border-blue-500 bg-blue-500'
+                                        : 'border-theme-secondary'
                                         }`}
                                 >
                                     {selectedPresetId === preset.id && (
@@ -263,6 +264,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
     const currentLanguageLabel = t(`language.name.${locale}` as TranslationKey);
     const { theme, setTheme } = useThemeStore();
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const { useConversationContext, setUseConversationContext } = useSettingsStore();
 
     return (
         <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
@@ -319,6 +321,12 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                         description={isDarkMode ? 'Tema escuro ativado' : 'Tema claro ativado'}
                         checked={isDarkMode}
                         onChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                    />
+                    <ToggleRow
+                        label="Usar Contexto Anterior"
+                        description="Carregar histórico de conversas como contexto"
+                        checked={useConversationContext}
+                        onChange={setUseConversationContext}
                     />
                     <SettingsItem
                         icon={<IconBell />}
