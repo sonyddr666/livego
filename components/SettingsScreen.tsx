@@ -1,13 +1,187 @@
 import React from 'react';
 import { ScreenName } from '../types';
-import { IconChevronLeft, IconChevronRight, IconUser, IconBell, IconLock, IconHelp, IconInfo, IconMic, IconSparkles, IconClock, IconGlobe, IconCheck, IconEye, IconEyeOff } from './Icons';
+import { IconChevronLeft, IconChevronRight, IconUser, IconBell, IconLock, IconHelp, IconInfo, IconMic, IconSparkles, IconClock, IconGlobe, IconCheck, IconEye, IconEyeOff, IconTrash, IconPlus } from './Icons';
 import { AVAILABLE_VOICES } from '../config/voices';
 import type { VoiceConfig } from '../config/voices';
 import { useI18n } from '../i18n';
 import type { Locale, TranslationKey } from '../i18n';
 import { useThemeStore } from '../store/themeStore';
+import { useInstructionPresets, type InstructionPreset } from '../store/instructionPresetsStore';
 
-const APP_VERSION = '1.0.13';
+// Instructions Screen with Presets Component
+const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const { t } = useI18n();
+    const { presets, selectedPresetId, customInstruction, addPreset, updatePreset, deletePreset, selectPreset, setCustomInstruction } = useInstructionPresets();
+    const [editingPreset, setEditingPreset] = React.useState<InstructionPreset | null>(null);
+    const [isCreating, setIsCreating] = React.useState(false);
+    const [newName, setNewName] = React.useState('');
+    const [newInstruction, setNewInstruction] = React.useState('');
+
+    const handleSaveNew = () => {
+        if (newName.trim() && newInstruction.trim()) {
+            addPreset(newName.trim(), newInstruction.trim());
+            setNewName('');
+            setNewInstruction('');
+            setIsCreating(false);
+        }
+    };
+
+    const handleUpdatePreset = () => {
+        if (editingPreset && newName.trim() && newInstruction.trim()) {
+            updatePreset(editingPreset.id, newName.trim(), newInstruction.trim());
+            setEditingPreset(null);
+            setNewName('');
+            setNewInstruction('');
+        }
+    };
+
+    const startEditing = (preset: InstructionPreset) => {
+        setEditingPreset(preset);
+        setNewName(preset.name);
+        setNewInstruction(preset.instruction);
+        setIsCreating(false);
+    };
+
+    const cancelEdit = () => {
+        setEditingPreset(null);
+        setIsCreating(false);
+        setNewName('');
+        setNewInstruction('');
+    };
+
+    // If editing or creating, show the form
+    if (isCreating || editingPreset) {
+        return (
+            <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
+                <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+                    <button type="button" onClick={cancelEdit} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
+                        <IconChevronLeft className="w-6 h-6" />
+                    </button>
+                    <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
+                        {editingPreset ? 'Editar Preset' : 'Novo Preset'}
+                    </h1>
+                </div>
+                <div className="flex-1 p-6 overflow-y-auto no-scrollbar">
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-theme-secondary mb-2">Nome do Preset</label>
+                        <input
+                            type="text"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            placeholder="Ex: Modo Casual"
+                            className="w-full px-4 py-3 bg-theme-secondary border border-theme rounded-xl text-theme-primary placeholder:text-theme-muted focus:border-blue-500 outline-none"
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-theme-secondary mb-2">Instrução do Sistema</label>
+                        <textarea
+                            value={newInstruction}
+                            onChange={(e) => setNewInstruction(e.target.value)}
+                            placeholder="Descreva como o assistente deve se comportar..."
+                            className="w-full px-4 py-3 bg-theme-secondary border border-theme rounded-xl text-theme-primary placeholder:text-theme-muted focus:border-blue-500 outline-none resize-none"
+                            style={{ minHeight: '200px' }}
+                        />
+                    </div>
+                    <button
+                        onClick={editingPreset ? handleUpdatePreset : handleSaveNew}
+                        disabled={!newName.trim() || !newInstruction.trim()}
+                        className="w-full py-3 bg-blue-600 text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                    >
+                        {editingPreset ? 'Salvar Alterações' : 'Criar Preset'}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Main presets list
+    return (
+        <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
+            <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+                <button type="button" onClick={onBack} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
+                    <IconChevronLeft className="w-6 h-6" />
+                </button>
+                <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
+                    {t('settings.instructions.title')}
+                </h1>
+            </div>
+
+            <div className="flex-1 p-6 overflow-y-auto no-scrollbar">
+                {/* Create New Button */}
+                <button
+                    onClick={() => setIsCreating(true)}
+                    className="w-full mb-6 py-3 px-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                >
+                    <IconPlus className="w-5 h-5" />
+                    Criar Novo Preset
+                </button>
+
+                {/* Presets List */}
+                <div className="bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme">
+                    {presets.map((preset, i) => (
+                        <div
+                            key={preset.id}
+                            className={`p-4 ${i !== presets.length - 1 ? 'border-b border-theme' : ''}`}
+                        >
+                            <div className="flex items-start gap-3">
+                                {/* Selection Radio */}
+                                <button
+                                    onClick={() => selectPreset(preset.id)}
+                                    className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedPresetId === preset.id
+                                            ? 'border-blue-500 bg-blue-500'
+                                            : 'border-theme-secondary'
+                                        }`}
+                                >
+                                    {selectedPresetId === preset.id && (
+                                        <div className="w-2 h-2 bg-white rounded-full" />
+                                    )}
+                                </button>
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h3 className="font-semibold text-theme-primary">{preset.name}</h3>
+                                        {preset.isDefault && (
+                                            <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full">Padrão</span>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-theme-secondary line-clamp-2">{preset.instruction}</p>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                    {!preset.isDefault && (
+                                        <>
+                                            <button
+                                                onClick={() => startEditing(preset)}
+                                                className="p-2 text-theme-secondary hover:text-blue-500 transition-colors"
+                                                title="Editar"
+                                            >
+                                                <IconSparkles className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => deletePreset(preset.id)}
+                                                className="p-2 text-theme-secondary hover:text-red-500 transition-colors"
+                                                title="Excluir"
+                                            >
+                                                <IconTrash className="w-4 h-4" />
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <p className="mt-4 text-xs text-theme-muted px-2 text-center">
+                    Selecione um preset ou crie seu próprio. Presets padrão não podem ser editados.
+                </p>
+            </div>
+        </div>
+    );
+};
+const APP_VERSION = '1.0.14';
 const LANGUAGE_OPTIONS: { id: Locale; labelKey: TranslationKey }[] = [
     { id: 'en', labelKey: 'language.name.en' },
     { id: 'pt-BR', labelKey: 'language.name.pt-BR' },
@@ -26,8 +200,8 @@ const SettingsGroup: React.FC<{ children: React.ReactNode; title?: string }> = (
 
     return (
         <div className="mb-6" role="group" aria-labelledby={title ? titleId : undefined}>
-            {title && <h3 id={titleId} className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-4 mb-2">{title}</h3>}
-            <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+            {title && <h3 id={titleId} className="text-xs font-semibold text-theme-muted uppercase tracking-wider ml-4 mb-2">{title}</h3>}
+            <div className="bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme">
                 {children}
             </div>
         </div>
@@ -45,16 +219,16 @@ const SettingsItem: React.FC<{
     <button
         type="button"
         onClick={onClick}
-        className={`w-full flex items-center p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+        className={`w-full flex items-center p-4 text-left hover:bg-theme-hover active:bg-theme-active transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-theme' : ''}`}
     >
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-4 text-white ${color}`}>
             {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: "w-5 h-5" })}
         </div>
         <div className="flex-1 flex justify-between items-center mr-2">
-            <span className="text-[15px] font-medium text-gray-900">{label}</span>
-            {value && <span className="text-[14px] text-gray-400">{value}</span>}
+            <span className="text-[15px] font-medium text-theme-primary">{label}</span>
+            {value && <span className="text-[14px] text-theme-secondary">{value}</span>}
         </div>
-        <IconChevronRight className="text-gray-300 w-5 h-5 shrink-0" />
+        <IconChevronRight className="text-theme-muted w-5 h-5 shrink-0" />
     </button>
 );
 
@@ -70,13 +244,13 @@ const ToggleRow: React.FC<{
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+        className={`w-full flex items-center justify-between p-4 text-left hover:bg-theme-hover active:bg-theme-active transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-theme' : ''}`}
     >
         <div className="flex flex-col">
-            <span className="text-gray-900 font-medium">{label}</span>
-            {description && <span className="text-xs text-gray-400">{description}</span>}
+            <span className="text-theme-primary font-medium">{label}</span>
+            {description && <span className="text-xs text-theme-secondary">{description}</span>}
         </div>
-        <span className={`w-10 h-6 rounded-full relative transition-colors ${checked ? 'bg-green-500' : 'bg-gray-200'}`} aria-hidden="true">
+        <span className={`w-10 h-6 rounded-full relative transition-colors ${checked ? 'bg-green-500' : 'bg-theme-tertiary'}`} aria-hidden="true">
             <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
         </span>
     </button>
@@ -91,12 +265,12 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     return (
-        <div className="flex flex-col h-full bg-[#f3f4f6]">
-            <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-                <button type="button" onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+        <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
+            <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+                <button type="button" onClick={onBack} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
                     <IconChevronLeft className="w-6 h-6" />
                 </button>
-                <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">
+                <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
                     {t('settings.title')}
                 </h1>
             </div>
@@ -214,17 +388,17 @@ interface SettingsDetailProps {
 
 // Helper components defined OUTSIDE to prevent re-creation on each render
 const ContentWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="flex flex-col h-full bg-[#f3f4f6]">
+    <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
         {children}
     </div>
 );
 
 const DetailHeader: React.FC<{ title: string; onBack: () => void }> = ({ title, onBack }) => (
-    <div className="flex items-center px-6 pt-6 pb-4 bg-white border-b border-gray-200 sticky top-0 z-20">
-        <button type="button" onClick={onBack} className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+    <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+        <button type="button" onClick={onBack} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
             <IconChevronLeft className="w-6 h-6" />
         </button>
-        <h1 className="flex-1 text-center text-[17px] font-semibold text-gray-900 mr-8">{title}</h1>
+        <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">{title}</h1>
     </div>
 );
 
@@ -245,11 +419,11 @@ const VoiceOption: React.FC<{
             role="radio"
             aria-checked={isSelected}
             onClick={onSelect}
-            className={`w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+            className={`w-full flex items-center justify-between p-4 text-left hover:bg-theme-hover active:bg-theme-active transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-theme' : ''}`}
         >
             <div className="flex flex-col">
-                <span className="text-[15px] font-medium text-gray-900">{voice.name}</span>
-                {description && <span className="text-xs text-gray-400">{description}</span>}
+                <span className="text-[15px] font-medium text-theme-primary">{voice.name}</span>
+                {description && <span className="text-xs text-theme-secondary">{description}</span>}
             </div>
             {isSelected && <IconCheck className="w-5 h-5 text-blue-500" />}
         </button>
@@ -267,9 +441,9 @@ const LanguageOption: React.FC<{
         role="radio"
         aria-checked={isSelected}
         onClick={onSelect}
-        className={`w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-gray-100' : ''}`}
+        className={`w-full flex items-center justify-between p-4 text-left hover:bg-theme-hover active:bg-theme-active transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${!isLast ? 'border-b border-theme' : ''}`}
     >
-        <span className="text-[15px] font-medium text-gray-900">{label}</span>
+        <span className="text-[15px] font-medium text-theme-primary">{label}</span>
         {isSelected && <IconCheck className="w-5 h-5 text-blue-500" />}
     </button>
 );
@@ -290,7 +464,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
             <ContentWrapper>
                 <DetailHeader onBack={onBack} title={t('settings.voice.title')} />
                 <div className="p-6">
-                    <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100" role="radiogroup" aria-label={t('settings.voice.title')}>
+                    <div className="bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme" role="radiogroup" aria-label={t('settings.voice.title')}>
                         {AVAILABLE_VOICES.map((voice, i) => (
                             <VoiceOption
                                 key={voice.id}
@@ -301,7 +475,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                             />
                         ))}
                     </div>
-                    <p className="mt-4 text-xs text-gray-500 px-2">
+                    <p className="mt-4 text-xs text-theme-secondary px-2">
                         {t('settings.voice.description')}
                     </p>
                 </div>
@@ -315,7 +489,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
             <ContentWrapper>
                 <DetailHeader onBack={onBack} title={t('settings.language.title')} />
                 <div className="p-6">
-                    <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100" role="radiogroup" aria-label={t('settings.language.title')}>
+                    <div className="bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme" role="radiogroup" aria-label={t('settings.language.title')}>
                         {LANGUAGE_OPTIONS.map((option, i) => (
                             <LanguageOption
                                 key={option.id}
@@ -326,7 +500,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                             />
                         ))}
                     </div>
-                    <p className="mt-4 text-xs text-gray-500 px-2">
+                    <p className="mt-4 text-xs text-theme-secondary px-2">
                         {t('settings.language.description')}
                     </p>
                 </div>
@@ -334,27 +508,9 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
         );
     }
 
-    // --- INSTRUCTIONS SCREEN ---
+    // --- INSTRUCTIONS SCREEN with Presets ---
     if (screen === ScreenName.INSTRUCTIONS) {
-        return (
-            <ContentWrapper>
-                <DetailHeader onBack={onBack} title={t('settings.instructions.title')} />
-                <div className="p-6 flex-1 flex flex-col box-border">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex-1 flex flex-col overflow-hidden">
-                        <textarea
-                            value={systemInstruction}
-                            onChange={(e) => setSystemInstruction(e.target.value)}
-                            className="flex-1 w-full h-full resize-none outline-none text-[16px] leading-relaxed text-gray-900 placeholder-gray-400 bg-white font-normal p-1"
-                            placeholder={t('settings.instructions.placeholder')}
-                            style={{ minHeight: '300px' }}
-                        />
-                    </div>
-                    <p className="mt-4 text-xs text-gray-500 px-2">
-                        {t('settings.instructions.description')}
-                    </p>
-                </div>
-            </ContentWrapper>
-        );
+        return <InstructionsScreenWithPresets onBack={onBack} />;
     }
 
     // --- ACCOUNT SCREEN ---
@@ -364,11 +520,11 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                 <DetailHeader onBack={onBack} title={t('settings.account.title')} />
                 <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
                     <div className="flex flex-col items-center mb-8">
-                        <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-500 mb-4">
+                        <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-500 dark:text-blue-400 mb-4">
                             <IconUser className="w-10 h-10" />
                         </div>
-                        <h2 className="text-lg font-bold text-gray-900">{t('settings.account.demoUser')}</h2>
-                        <p className="text-gray-500 text-sm">user_839210@livego.dev</p>
+                        <h2 className="text-lg font-bold text-theme-primary">{t('settings.account.demoUser')}</h2>
+                        <p className="text-theme-secondary text-sm">user_839210@livego.dev</p>
                     </div>
 
                     {/* API Key Management Section */}
@@ -381,31 +537,31 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                                     onChange={(e) => setApiKey(e.target.value)}
                                     placeholder={t('settings.account.apiKeyPlaceholder')}
                                     aria-label={t('settings.account.apiKeyLabel')}
-                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50"
+                                    className="flex-1 px-3 py-2 border border-theme rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-theme-tertiary text-theme-primary"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowApiKey(!showApiKey)}
                                     aria-label={showApiKey ? t('common.hideApiKey') : t('common.showApiKey')}
-                                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                    className="p-2 text-theme-secondary hover:text-theme-primary hover:bg-theme-hover rounded-lg transition-colors"
                                 >
                                     {showApiKey ? <IconEyeOff className="w-5 h-5" /> : <IconEye className="w-5 h-5" />}
                                 </button>
                             </div>
-                            <p className="mt-2 text-xs text-gray-500">
+                            <p className="mt-2 text-xs text-theme-secondary">
                                 {t('settings.account.apiKeySaved')}
                             </p>
                         </div>
                     </SettingsGroup>
 
                     <SettingsGroup title={t('settings.account.profile')}>
-                        <div className="p-4 border-b border-gray-100 flex justify-between">
-                            <span className="text-gray-600">{t('settings.account.plan')}</span>
-                            <span className="font-medium text-blue-600">{t('settings.account.planValue')}</span>
+                        <div className="p-4 border-b border-theme flex justify-between">
+                            <span className="text-theme-secondary">{t('settings.account.plan')}</span>
+                            <span className="font-medium text-blue-600 dark:text-blue-400">{t('settings.account.planValue')}</span>
                         </div>
                         <div className="p-4 flex justify-between">
-                            <span className="text-gray-600">{t('settings.account.memberSince')}</span>
-                            <span className="font-medium text-gray-900">{t('settings.account.memberSinceValue')}</span>
+                            <span className="text-theme-secondary">{t('settings.account.memberSince')}</span>
+                            <span className="font-medium text-theme-primary">{t('settings.account.memberSinceValue')}</span>
                         </div>
                     </SettingsGroup>
 
@@ -413,7 +569,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                         type="button"
                         disabled
                         title={t('common.comingSoon')}
-                        className="w-full py-3 text-red-500 bg-white rounded-xl shadow-sm border border-gray-100 font-medium text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full py-3 text-red-500 dark:text-red-400 bg-theme-secondary rounded-xl shadow-sm border border-theme font-medium text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                         {t('settings.account.delete')}
                     </button>
@@ -483,9 +639,9 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                 <DetailHeader onBack={onBack} title={t('settings.help.title')} />
                 <div className="p-6">
                     <SettingsGroup title={t('settings.help.faq')}>
-                        <div className="p-4 border-b border-gray-100"><span className="text-gray-900 font-medium">{t('settings.help.voice')}</span></div>
-                        <div className="p-4 border-b border-gray-100"><span className="text-gray-900 font-medium">{t('settings.help.free')}</span></div>
-                        <div className="p-4"><span className="text-gray-900 font-medium">{t('settings.help.contact')}</span></div>
+                        <div className="p-4 border-b border-theme"><span className="text-theme-primary font-medium">{t('settings.help.voice')}</span></div>
+                        <div className="p-4 border-b border-theme"><span className="text-theme-primary font-medium">{t('settings.help.free')}</span></div>
+                        <div className="p-4"><span className="text-theme-primary font-medium">{t('settings.help.contact')}</span></div>
                     </SettingsGroup>
                 </div>
             </ContentWrapper>
@@ -500,17 +656,17 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                     <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-lg mb-6">
                         <IconSparkles className="w-8 h-8" />
                     </div>
-                    <h2 className="text-xl font-bold text-gray-900">LIVEGO</h2>
-                    <p className="text-gray-400 mb-8">{t('app.versionBeta', { version: APP_VERSION })}</p>
+                    <h2 className="text-xl font-bold text-theme-primary">LIVEGO</h2>
+                    <p className="text-theme-muted mb-8">{t('app.versionBeta', { version: APP_VERSION })}</p>
 
-                    <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                        <p className="text-sm text-gray-600 text-center leading-relaxed">
+                    <div className="w-full bg-theme-secondary rounded-xl shadow-sm border border-theme p-4">
+                        <p className="text-sm text-theme-secondary text-center leading-relaxed">
                             {t('settings.about.powered')}
                             {' '}
                             {t('settings.about.tagline')}
                         </p>
                     </div>
-                    <p className="mt-8 text-xs text-gray-300">{t('settings.about.copyright')}</p>
+                    <p className="mt-8 text-xs text-theme-muted">{t('settings.about.copyright')}</p>
                 </div>
             </ContentWrapper>
         );

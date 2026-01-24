@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="en" class="light">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LIVEGO - Voice AI Chat</title>
-    
+
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
-    
+
     <!-- Favicon SVG -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%235b5fff;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%233b82f6;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='50' r='25' fill='white' opacity='0.9'/%3E%3Ccircle cx='50' cy='50' r='15' fill='url(%23grad)'/%3E%3C/svg%3E">
-    
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%235b5fff;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%233b82f6;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='50' r='25' fill='white' opacity='0.9'/%3E%3Ccircle cx='50' cy='50' r='15' fill='url(%23grad)'/%3E%3C/svg%3E">
+
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#4f46e5">
     <meta name="description" content="LIVEGO - Real-time voice AI conversations powered by Gemini">
@@ -18,36 +20,89 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="LiveGo">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
-    
+
     <!-- Splash Screens for iOS -->
     <meta name="mobile-web-app-capable" content="yes">
-    
+
     <!-- Security -->
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="X-Frame-Options" content="DENY">
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* CSS Custom Properties for theming */
+        /* Design Tokens - Light Mode (default) */
         :root {
+            /* Backgrounds */
             --bg-primary: #f3f4f6;
             --bg-secondary: #ffffff;
+            --bg-tertiary: #e5e7eb;
+            --bg-hover: #f9fafb;
+            --bg-active: #f3f4f6;
+
+            /* Text */
             --text-primary: #1f2937;
             --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --text-inverse: #ffffff;
+
+            /* Borders */
+            --border-primary: #e5e7eb;
+            --border-secondary: #f3f4f6;
+
+            /* Accent */
             --accent-primary: #4f46e5;
             --accent-secondary: #3b82f6;
+
+            /* Shadows */
+            --shadow-color: rgba(0, 0, 0, 0.1);
         }
-        
+
+        /* Design Tokens - Dark Mode (OLED optimized) */
         .dark {
-            --bg-primary: #0a0a0a;
-            --bg-secondary: #1a1a1a;
-            --text-primary: #f9fafb;
-            --text-secondary: #9ca3af;
-            --accent-primary: #6366f1;
-            --accent-secondary: #60a5fa;
+            /* Backgrounds - OLED Optimized Elevation System
+               Layer 0: True black (max battery savings)
+               Layer 1: Elevated surfaces (cards, headers)
+               Layer 2: Higher elevation (modals, dropdowns)
+            */
+            --bg-primary: #000000;
+            /* True black for OLED */
+            --bg-secondary: #121212;
+            /* Elevated surfaces (Material Design) */
+            --bg-tertiary: #1E1E1E;
+            /* Higher elevation */
+            --bg-hover: #1A1A1A;
+            --bg-active: #242424;
+
+            /* Text - Not pure white to reduce eye strain */
+            --text-primary: #E0E0E0;
+            /* 87% white (Material Design) */
+            --text-secondary: #A0A0A0;
+            /* 63% white */
+            --text-muted: #6E6E6E;
+            /* 43% white */
+            --text-inverse: #000000;
+
+            /* Borders - Subtle separation */
+            --border-primary: #2C2C2C;
+            --border-secondary: #3C3C3C;
+
+            /* Accent - Desaturated for dark mode (easier on eyes) */
+            --accent-primary: #818CF8;
+            /* Lighter indigo */
+            --accent-secondary: #93C5FD;
+            /* Lighter blue */
+
+            /* Shadows - Stronger in dark mode */
+            --shadow-color: rgba(0, 0, 0, 0.6);
         }
-        
+
+        /* Base Styles */
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--bg-primary);
@@ -57,65 +112,130 @@
             overflow: hidden;
             transition: background-color 0.3s ease, color 0.3s ease;
         }
-        
+
+        /* Theme Utility Classes */
+        .bg-theme-primary {
+            background-color: var(--bg-primary) !important;
+        }
+
+        .bg-theme-secondary {
+            background-color: var(--bg-secondary) !important;
+        }
+
+        .bg-theme-tertiary {
+            background-color: var(--bg-tertiary) !important;
+        }
+
+        .hover\:bg-theme-hover:hover {
+            background-color: var(--bg-hover) !important;
+        }
+
+        .active\:bg-theme-active:active {
+            background-color: var(--bg-active) !important;
+        }
+
+        .text-theme-primary {
+            color: var(--text-primary) !important;
+        }
+
+        .text-theme-secondary {
+            color: var(--text-secondary) !important;
+        }
+
+        .text-theme-muted {
+            color: var(--text-muted) !important;
+        }
+
+        .border-theme {
+            border-color: var(--border-primary) !important;
+        }
+
+        .border-theme-secondary {
+            border-color: var(--border-secondary) !important;
+        }
+
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
+
         .no-scrollbar {
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
-        
+
         /* Glassmorphism utilities */
         .glass {
             background: rgba(255, 255, 255, 0.7);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
+
         .dark .glass {
             background: rgba(30, 30, 30, 0.7);
         }
-        
+
         .glass-dark {
             background: rgba(30, 30, 30, 0.6);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
+
         /* Animation keyframes */
         @keyframes pulse-ring {
-            0% { transform: scale(0.8); opacity: 0.5; }
-            100% { transform: scale(1.3); opacity: 0; }
+            0% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1.3);
+                opacity: 0;
+            }
         }
+
         .animate-pulse-ring {
             animation: pulse-ring 3s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
-        
+
         /* Page transitions */
         @keyframes fade-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
+
         .animate-in {
             animation: fade-in 0.3s ease-out forwards;
         }
-        
+
         @keyframes slide-in-from-right {
-            from { transform: translateX(20px); }
-            to { transform: translateX(0); }
+            from {
+                transform: translateX(20px);
+            }
+
+            to {
+                transform: translateX(0);
+            }
         }
+
         .slide-in-from-right {
             animation: slide-in-from-right 0.3s ease-out forwards;
         }
-        
+
         /* Focus visible for accessibility */
         :focus-visible {
             outline: 2px solid var(--accent-primary);
             outline-offset: 2px;
         }
     </style>
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
@@ -130,10 +250,11 @@
 }
 </script>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-    
+
     <!-- Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
@@ -149,4 +270,5 @@
         }
     </script>
 </body>
+
 </html>
