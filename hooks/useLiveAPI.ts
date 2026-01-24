@@ -108,11 +108,24 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const isMutedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
 
+  // Wake Lock for mobile (keeps screen on)
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
   const disconnect = useCallback(() => {
+    console.log('📴 Disconnecting session...');
+
+    // Release Wake Lock
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().then(() => {
+        console.log('🔓 Wake Lock released');
+      }).catch(() => { });
+      wakeLockRef.current = null;
+    }
+
     if (audioWorkletNodeRef.current) {
       audioWorkletNodeRef.current.disconnect();
       audioWorkletNodeRef.current = null;
@@ -366,10 +379,24 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
-          onopen: () => {
-            console.log("Live Session Opened");
+          onopen: async () => {
+            console.log("🟢 Live Session Opened");
             setConnected(true);
             setIsConnecting(false); // Stop loading
+
+            // Request Wake Lock to keep screen on (mobile)
+            try {
+              if ('wakeLock' in navigator) {
+                wakeLockRef.current = await navigator.wakeLock.request('screen');
+                console.log('🔒 Wake Lock acquired - screen will stay on');
+
+                wakeLockRef.current.addEventListener('release', () => {
+                  console.log('⚠️ Wake Lock was released by system');
+                });
+              }
+            } catch (err) {
+              console.warn('Wake Lock not supported or denied:', err);
+            }
 
             if (!inputAudioContextRef.current) return;
 
@@ -504,12 +531,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
           },
-          onclose: () => {
-            console.log("Live Session Closed");
+          onclose: (event?: any) => {
+            console.log("🔴 Live Session Closed", event ? `Code: ${event.code}, Reason: ${event.reason}` : '');
             disconnect();
           },
           onerror: (err) => {
-            console.error("Live Session Error", err);
+            console.error("🔴 Live Session Error:", err);
             disconnect();
           }
         },
