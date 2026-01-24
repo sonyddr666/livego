@@ -106,6 +106,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
+  const isConnectedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
 
   useEffect(() => {
@@ -148,6 +149,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     }
 
     setConnected(false);
+    isConnectedRef.current = false;
     setIsConnecting(false);
     setVolume(0);
     setIsMuted(false);
@@ -369,6 +371,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           onopen: () => {
             console.log("Live Session Opened");
             setConnected(true);
+            isConnectedRef.current = true;
             setIsConnecting(false); // Stop loading
 
             if (!inputAudioContextRef.current) return;
@@ -385,7 +388,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             audioWorkletNodeRef.current.port.onmessage = (event) => {
               const inputData = event.data as Float32Array;
 
-              if (isMutedRef.current) {
+              // Don't send if disconnected or muted
+              if (!isConnectedRef.current || isMutedRef.current) {
                 return;
               }
 
@@ -393,7 +397,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
               const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
               sessionPromise.then(session => {
-                session.sendRealtimeInput({ media: pcmBlob });
+                if (isConnectedRef.current) {
+                  session.sendRealtimeInput({ media: pcmBlob });
+                }
               });
             };
 
