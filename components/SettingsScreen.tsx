@@ -549,6 +549,44 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                                     {showApiKey ? <IconEyeOff className="w-5 h-5" /> : <IconEye className="w-5 h-5" />}
                                 </button>
                             </div>
+
+                            {/* Validation and Save Button */}
+                            <div className="mt-3 flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (apiKey.trim().length >= 39) {
+                                            // Force save by calling setApiKey with trimmed value
+                                            setApiKey(apiKey.trim());
+                                            alert('✅ API Key salva com sucesso!');
+                                        } else if (apiKey.trim().length === 0) {
+                                            setApiKey('');
+                                            alert('🗑️ API Key removida');
+                                        } else {
+                                            alert('❌ API Key inválida. A chave deve ter pelo menos 39 caracteres.');
+                                        }
+                                    }}
+                                    className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors ${apiKey.trim().length >= 39 || apiKey.trim().length === 0
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                            : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                                        }`}
+                                >
+                                    {apiKey.trim().length === 0 ? 'Limpar' : 'Salvar API Key'}
+                                </button>
+                            </div>
+
+                            {/* Validation feedback */}
+                            {apiKey.trim().length > 0 && apiKey.trim().length < 39 && (
+                                <p className="mt-2 text-xs text-red-500">
+                                    ⚠️ Chave muito curta ({apiKey.trim().length}/39 caracteres mínimos)
+                                </p>
+                            )}
+                            {apiKey.trim().length >= 39 && (
+                                <p className="mt-2 text-xs text-green-500">
+                                    ✅ Chave válida ({apiKey.trim().length} caracteres)
+                                </p>
+                            )}
+
                             <p className="mt-2 text-xs text-theme-secondary">
                                 {t('settings.account.apiKeySaved')}
                             </p>
