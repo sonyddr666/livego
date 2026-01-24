@@ -8,6 +8,7 @@ import type { Locale, TranslationKey } from '../i18n';
 import { useThemeStore } from '../store/themeStore';
 import { useInstructionPresets, type InstructionPreset } from '../store/instructionPresetsStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { APP_VERSION } from '../config/version';
 
 // Instructions Screen with Presets Component
 const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -182,7 +183,7 @@ const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBac
         </div>
     );
 };
-const APP_VERSION = '1.0.15';
+// APP_VERSION is now imported from config/version.ts
 const LANGUAGE_OPTIONS: { id: Locale; labelKey: TranslationKey }[] = [
     { id: 'en', labelKey: 'language.name.en' },
     { id: 'pt-BR', labelKey: 'language.name.pt-BR' },
@@ -567,8 +568,8 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                                         }
                                     }}
                                     className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors ${apiKey.trim().length >= 39 || apiKey.trim().length === 0
-                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                            : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                        : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                                         }`}
                                 >
                                     {apiKey.trim().length === 0 ? 'Limpar' : 'Salvar API Key'}

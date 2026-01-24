@@ -35,28 +35,28 @@ registerProcessor('pcm-processor', PCMProcessor);
 `;
 
 // Build enhanced system instruction for advanced features
-function buildAdvancedSystemInstruction(baseInstruction: string): string {
+function buildAdvancedSystemInstruction(baseInstruction: string, useHistory: boolean = false): string {
+  const historyInstructions = useHistory ? `
+HISTÓRICO DE CONVERSAS:
+- Chame get_conversation_history(days=7) no início para entender o contexto
+- Use o histórico para uma saudação personalizada se houver conversas anteriores
+- Seja natural, não mencione que está "buscando dados"
+
+PADRÕES PARA FUNCTIONS DE HISTÓRICO:
+- Histórico genérico → 30 dias
+- "Última conversa" → 1 dia
+- NÃO pergunte qual período - use os padrões acima` : '';
+
   return `${baseInstruction}
 
-CAPACIDADES AVANÇADAS (use silenciosamente):
-1. Acesso a histórico de conversas (functions)
-2. Busca na web em tempo real (Google Search)
-
-INÍCIO DE CONVERSA:
-- Chame get_conversation_history(days=7) para entender o contexto
-- Use o histórico para uma saudação personalizada se houver conversas anteriores
-- Seja natural, não mencione que está "buscando dados" ou "analisando"
+CAPACIDADES AVANÇADAS:
+1. Busca na web em tempo real (Google Search)${useHistory ? '\n2. Acesso a histórico de conversas (functions)' : ''}
 
 BUSCA NA WEB (Google Search):
 - Se o usuário perguntar sobre notícias, eventos atuais, preços, clima, ou qualquer informação que possa mudar com o tempo, USE A BUSCA
 - NÃO invente informações - se não tiver certeza, busque
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
-- Cite as fontes quando relevante
-
-PADRÕES PARA FUNCTIONS:
-- Histórico genérico → 30 dias
-- "Última conversa" → 1 dia
-- NÃO pergunte qual período - use os padrões acima`;
+- Cite as fontes quando relevante${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -518,7 +518,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           systemInstruction: config.enableAdvancedFeatures
-            ? buildAdvancedSystemInstruction(config.systemInstruction)
+            ? buildAdvancedSystemInstruction(config.systemInstruction, config.useConversationContext)
             : config.systemInstruction,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } }

@@ -101,7 +101,7 @@ const App: React.FC = () => {
       contextWithHistory = `${activeInstruction}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
     }
 
-    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true });
+    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true, useConversationContext });
   };
 
   // Watch for connection state to transition screen

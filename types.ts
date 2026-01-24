@@ -26,6 +26,7 @@ export interface LiveConfig {
   systemInstruction: string;
   apiKey?: string;
   enableAdvancedFeatures?: boolean;
+  useConversationContext?: boolean;
 }
 
 export interface HistoryItem {

@@ -5,12 +5,9 @@ const STATIC_ASSETS = [
     '/manifest.json',
 ];
 
-// Offline timeout configuration (in milliseconds)
-// Set to 1 minute for testing, change to 3600000 (1 hour) for production
-const OFFLINE_TIMEOUT_MS = 60000; // 1 minute
-
-// Track when we went offline
-let offlineStartTime = null;
+// Offline timeout configuration
+const OFFLINE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+const OFFLINE_START_KEY = 'livego_offline_start';
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -36,13 +33,48 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Check if offline timeout has expired
-function isOfflineTimeoutExpired() {
-    if (offlineStartTime === null) return false;
-    return (Date.now() - offlineStartTime) > OFFLINE_TIMEOUT_MS;
+// Helper to get offline start from IndexedDB (localStorage not available in SW)
+async function getOfflineStart() {
+    try {
+        const cache = await caches.open('livego-offline-state');
+        const response = await cache.match('offline-start');
+        if (response) {
+            const data = await response.json();
+            return data.timestamp;
+        }
+    } catch (e) {
+        console.log('[SW] Error reading offline state:', e);
+    }
+    return null;
 }
 
-// Fetch event - network first, fallback to cache with timeout
+async function setOfflineStart(timestamp) {
+    try {
+        const cache = await caches.open('livego-offline-state');
+        const response = new Response(JSON.stringify({ timestamp }));
+        await cache.put('offline-start', response);
+    } catch (e) {
+        console.log('[SW] Error saving offline state:', e);
+    }
+}
+
+async function clearOfflineStart() {
+    try {
+        const cache = await caches.open('livego-offline-state');
+        await cache.delete('offline-start');
+    } catch (e) {
+        console.log('[SW] Error clearing offline state:', e);
+    }
+}
+
+// Check if offline timeout has expired
+async function isOfflineTimeoutExpired() {
+    const offlineStart = await getOfflineStart();
+    if (offlineStart === null) return false;
+    return (Date.now() - offlineStart) > OFFLINE_TIMEOUT_MS;
+}
+
+// Fetch event - network first, fallback to cache with persistent timeout
 self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;
@@ -52,30 +84,34 @@ self.addEventListener('fetch', (event) => {
     if (!event.request.url.startsWith(self.location.origin)) return;
 
     event.respondWith(
-        fetch(event.request)
-            .then((response) => {
-                // Network is working - reset offline timer
-                offlineStartTime = null;
+        (async () => {
+            try {
+                const response = await fetch(event.request);
+
+                // Network is working - clear offline timer
+                await clearOfflineStart();
 
                 // Clone and cache successful responses
                 if (response.ok) {
                     const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseClone);
-                    });
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put(event.request, responseClone);
                 }
                 return response;
-            })
-            .catch(() => {
+            } catch (error) {
                 // Network failed - start or continue offline timer
-                if (offlineStartTime === null) {
-                    offlineStartTime = Date.now();
-                    console.log('[SW] Went offline at:', new Date(offlineStartTime).toISOString());
+                let offlineStart = await getOfflineStart();
+
+                if (offlineStart === null) {
+                    offlineStart = Date.now();
+                    await setOfflineStart(offlineStart);
+                    console.log('[SW] Went offline at:', new Date(offlineStart).toISOString());
                 }
 
                 // Check if offline timeout has expired
-                if (isOfflineTimeoutExpired()) {
-                    console.log('[SW] Offline timeout expired, refusing to serve cache');
+                const elapsed = Date.now() - offlineStart;
+                if (elapsed > OFFLINE_TIMEOUT_MS) {
+                    console.log('[SW] Offline timeout expired (24h), refusing to serve cache');
 
                     // Return an "offline expired" page for navigation requests
                     if (event.request.mode === 'navigate') {
@@ -116,7 +152,7 @@ self.addEventListener('fetch', (event) => {
                             </head>
                             <body>
                                 <h1>⏱️ Sessão Offline Expirada</h1>
-                                <p>O app ficou muito tempo sem conexão. Reconecte à internet para continuar usando o LiveGo.</p>
+                                <p>O app ficou mais de 24 horas sem conexão com o servidor. Reconecte à internet para continuar usando o LiveGo.</p>
                                 <button onclick="location.reload()">Tentar Novamente</button>
                             </body>
                             </html>`,
@@ -131,19 +167,19 @@ self.addEventListener('fetch', (event) => {
                 }
 
                 // Still within timeout - serve from cache
-                const timeRemaining = Math.round((OFFLINE_TIMEOUT_MS - (Date.now() - offlineStartTime)) / 1000);
-                console.log('[SW] Serving from cache. Time remaining:', timeRemaining, 'seconds');
+                const hoursRemaining = Math.round((OFFLINE_TIMEOUT_MS - elapsed) / (60 * 60 * 1000));
+                console.log('[SW] Serving from cache. Hours remaining:', hoursRemaining);
 
-                return caches.match(event.request).then((cachedResponse) => {
-                    if (cachedResponse) return cachedResponse;
+                const cachedResponse = await caches.match(event.request);
+                if (cachedResponse) return cachedResponse;
 
-                    // Return offline page for navigation requests
-                    if (event.request.mode === 'navigate') {
-                        return caches.match('/');
-                    }
+                // Return offline page for navigation requests
+                if (event.request.mode === 'navigate') {
+                    return caches.match('/');
+                }
 
-                    return new Response('Offline', { status: 503 });
-                });
-            })
+                return new Response('Offline', { status: 503 });
+            }
+        })()
     );
 });
