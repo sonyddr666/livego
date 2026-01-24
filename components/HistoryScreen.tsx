@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { HistoryItem } from '../types';
 import { IconChevronLeft, IconTrash, IconClock, IconUser, IconSparkles } from './Icons';
 import { useI18n } from '../i18n';
+import { useSettingsStore } from '../store/settingsStore';
 
 interface HistoryScreenProps {
     history: HistoryItem[];
@@ -17,6 +18,7 @@ interface ChatMessage {
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, onDelete }) => {
     const { t } = useI18n();
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+    const { useConversationContext, setUseConversationContext } = useSettingsStore();
 
     // Helper to parse the raw transcript string into chat messages
     const parsedMessages = useMemo(() => {
@@ -127,6 +129,23 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                 <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
                     {t('history.title')}
                 </h1>
+            </div>
+
+            {/* Context Toggle */}
+            <div className="px-6 py-4 bg-theme-secondary border-b border-theme">
+                <button
+                    type="button"
+                    onClick={() => setUseConversationContext(!useConversationContext)}
+                    className="w-full flex items-center justify-between"
+                >
+                    <div className="flex flex-col">
+                        <span className="text-theme-primary font-medium">Usar como Contexto</span>
+                        <span className="text-xs text-theme-secondary">Carregar histórico nas próximas conversas</span>
+                    </div>
+                    <span className={`w-12 h-7 rounded-full relative transition-colors ${useConversationContext ? 'bg-blue-500' : 'bg-theme-tertiary'}`}>
+                        <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${useConversationContext ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </span>
+                </button>
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar p-6">

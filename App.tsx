@@ -8,6 +8,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { useLiveAPI } from './hooks/useLiveAPI';
 import { useI18n } from './i18n';
+import { useInstructionPresets } from './store/instructionPresetsStore';
+import { useSettingsStore } from './store/settingsStore';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
@@ -16,9 +18,13 @@ const App: React.FC = () => {
   const { t, locale } = useI18n();
   const [currentScreen, setCurrentScreen] = useState<ScreenName>(ScreenName.HOME);
 
+  // Get active instruction from presets store
+  const { getActiveInstruction } = useInstructionPresets();
+  const { useConversationContext } = useSettingsStore();
 
   // Settings State
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
+  // Keep for backwards compatibility but prefer presets
   const [systemInstruction, setSystemInstruction] = useState<string>(() => t('systemInstruction.default'));
 
   // API Key State - Load from localStorage on mount
@@ -83,11 +89,19 @@ const App: React.FC = () => {
       return;
     }
     startTimeRef.current = Date.now();
-    await connect({ voiceName, systemInstruction, apiKey, enableAdvancedFeatures: true });
-    // Navigation to USAGE happens after connection is established? 
-    // Or optimistically?
-    // Given we have `isConnecting`, let's wait or show loading on Home.
-    // The useLiveAPI sets `connected` to true on open. We can watch that.
+
+    // Get the active instruction from presets (or use fallback)
+    const activeInstruction = getActiveInstruction() || systemInstruction;
+
+    // Build context from history if enabled
+    let contextWithHistory = activeInstruction;
+    if (useConversationContext && history.length > 0) {
+      // Add last 3 conversations as context
+      const recentHistory = history.slice(0, 3).map(h => h.transcript).join('\n---\n');
+      contextWithHistory = `${activeInstruction}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
+    }
+
+    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true });
   };
 
   // Watch for connection state to transition screen
