@@ -4,8 +4,9 @@
   "version": "1.0.16",
   "type": "module",
   "scripts": {
+    "preinstall": "node -e \"process.env.npm_config_omit=''\"",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build || npx vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix",
