@@ -233,10 +233,30 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
 
-      // Register AudioWorklet
+      // [Android Fix] Resume AudioContexts - Android/mobile browsers start in "suspended" state
+      if (inputAudioContextRef.current.state === 'suspended') {
+        console.log('[LiveAPI] Input AudioContext suspended, resuming...');
+        await inputAudioContextRef.current.resume();
+      }
+      if (outputAudioContextRef.current.state === 'suspended') {
+        console.log('[LiveAPI] Output AudioContext suspended, resuming...');
+        await outputAudioContextRef.current.resume();
+      }
+      console.log('[LiveAPI] AudioContext states:', inputAudioContextRef.current.state, outputAudioContextRef.current.state);
+
+      // Register AudioWorklet with fallback for Android compatibility
+      let useWorklet = true;
       const blob = new Blob([workletCode], { type: 'application/javascript' });
       const workletUrl = URL.createObjectURL(blob);
-      await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
+      try {
+        await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
+        console.log('[LiveAPI] AudioWorklet registered successfully');
+      } catch (workletError) {
+        console.warn('[LiveAPI] AudioWorklet failed (common on some Android devices), using fallback:', workletError);
+        useWorklet = false;
+      } finally {
+        URL.revokeObjectURL(workletUrl);
+      }
 
       // Setup Input Analyser
       inputAnalyserRef.current = inputAudioContextRef.current.createAnalyser();
@@ -257,7 +277,29 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       setTranscript('');
       currentSpeakerRef.current = null;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // [Android Fix] Use optimized audio constraints for mobile
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+        console.log('[LiveAPI] Microphone access granted');
+      } catch (micError) {
+        console.error('[LiveAPI] Microphone access failed:', micError);
+        throw new Error(`Microphone access denied: ${(micError as Error).message}. Please allow microphone access and try again.`);
+      }
+
+      // [Android Fix] Re-check AudioContext state after getUserMedia (some Android browsers resume here)
+      if (inputAudioContextRef.current?.state === 'suspended') {
+        await inputAudioContextRef.current.resume();
+      }
+      if (outputAudioContextRef.current?.state === 'suspended') {
+        await outputAudioContextRef.current.resume();
+      }
 
       // Build tools array based on config
       const tools: any[] = [];
@@ -373,23 +415,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
             if (!inputAudioContextRef.current) return;
 
+            // [Android Fix] Ensure AudioContext is running inside onopen
+            if (inputAudioContextRef.current.state === 'suspended') {
+              console.log('[LiveAPI] Resuming input AudioContext in onopen...');
+              inputAudioContextRef.current.resume();
+            }
+
             inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
             // Connect input to analyser for visualization
             if (inputAnalyserRef.current) {
               inputSourceRef.current.connect(inputAnalyserRef.current);
             }
 
-            // Replace ScriptProcessor with AudioWorklet
-            audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
-
-            audioWorkletNodeRef.current.port.onmessage = (event) => {
-              const inputData = event.data as Float32Array;
-
-              if (isMutedRef.current) {
-                return;
-              }
-
-              // Pass the native sample rate for automatic resampling to 16kHz
+            // Audio processing with WorkletNode or ScriptProcessor fallback
+            const sendAudioData = (inputData: Float32Array) => {
+              if (isMutedRef.current) return;
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
               const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
               sessionPromise.then(session => {
@@ -397,8 +437,29 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               });
             };
 
-            inputSourceRef.current.connect(audioWorkletNodeRef.current);
-            audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
+            if (useWorklet) {
+              // AudioWorklet path (preferred)
+              audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+              audioWorkletNodeRef.current.port.onmessage = (event) => {
+                sendAudioData(event.data as Float32Array);
+              };
+              inputSourceRef.current.connect(audioWorkletNodeRef.current);
+              audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination);
+              console.log('[LiveAPI] Audio pipeline: AudioWorklet');
+            } else {
+              // [Android Fallback] ScriptProcessorNode for devices that don't support AudioWorklet via Blob URL
+              const bufferSize = 2048;
+              const scriptNode = (inputAudioContextRef.current as any).createScriptProcessor(bufferSize, 1, 1);
+              scriptNode.onaudioprocess = (event: AudioProcessingEvent) => {
+                const inputData = event.inputBuffer.getChannelData(0);
+                sendAudioData(new Float32Array(inputData));
+              };
+              inputSourceRef.current.connect(scriptNode);
+              scriptNode.connect(inputAudioContextRef.current.destination);
+              // Store reference for cleanup
+              audioWorkletNodeRef.current = scriptNode;
+              console.log('[LiveAPI] Audio pipeline: ScriptProcessor (fallback)');
+            }
           },
           onmessage: async (message: LiveServerMessage) => {
             // Debug: Log all incoming messages to see Google Search grounding data
@@ -504,12 +565,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
           },
-          onclose: () => {
-            console.log("Live Session Closed");
+          onclose: (event: any) => {
+            console.warn('[LiveAPI] Session closed.', event ? `Code: ${event.code}, Reason: ${event.reason}` : 'No details');
             disconnect();
           },
-          onerror: (err) => {
-            console.error("Live Session Error", err);
+          onerror: (err: any) => {
+            console.error('[LiveAPI] Session error:', {
+              message: err?.message,
+              code: err?.code,
+              type: err?.type,
+              error: err
+            });
             disconnect();
           }
         },
@@ -530,7 +596,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       sessionPromiseRef.current = sessionPromise;
 
     } catch (error) {
-      console.error("Connection failed", error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('[LiveAPI] Connection failed:', {
+        message: errMsg,
+        inputCtxState: inputAudioContextRef.current?.state,
+        outputCtxState: outputAudioContextRef.current?.state,
+        error
+      });
       disconnect();
     }
   }, [disconnect]);
