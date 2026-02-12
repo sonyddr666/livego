@@ -222,15 +222,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       return;
     }
 
-    let chunksProcessed = 0;
-    const startTime = performance.now();
-
     while (audioQueueRef.current.length > 0) {
       const base64Audio = audioQueueRef.current.shift();
       if (!base64Audio) continue;
 
       try {
-        const decodeStart = performance.now();
         let audioBuffer = await decodeAudioData(
           base64ToUint8Array(base64Audio),
           ctx,
@@ -241,10 +237,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         if (ctx.sampleRate !== 24000) {
           audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
         }
-        const decodeMs = (performance.now() - decodeStart).toFixed(1);
 
         nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-        const gap = nextStartTimeRef.current - ctx.currentTime;
 
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
@@ -256,20 +250,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         source.start(nextStartTimeRef.current);
         nextStartTimeRef.current += audioBuffer.duration;
         sourcesRef.current.add(source);
-        chunksProcessed++;
-
-        // Debug log every 5 chunks to avoid spam
-        if (chunksProcessed % 5 === 0) {
-          console.log(`🔊 Audio: ${chunksProcessed} chunks, decode=${decodeMs}ms, gap=${gap.toFixed(2)}s, queue=${audioQueueRef.current.length}, sources=${sourcesRef.current.size}`);
-        }
       } catch (error) {
-        console.error('🔊 Audio decode error:', error);
+        console.error('Audio decode error:', error);
       }
-    }
-
-    if (chunksProcessed > 0) {
-      const totalMs = (performance.now() - startTime).toFixed(1);
-      console.log(`🔊 Audio batch done: ${chunksProcessed} chunks in ${totalMs}ms, active sources=${sourcesRef.current.size}`);
     }
 
     isProcessingQueueRef.current = false;
@@ -614,11 +597,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               // Add to queue for async processing
               audioQueueRef.current.push(base64Audio);
 
-              // Debug: log audio chunk arrival
-              if (audioQueueRef.current.length === 1 || audioQueueRef.current.length % 10 === 0) {
-                console.log(`🎵 Audio chunk received: size=${(base64Audio.length / 1024).toFixed(1)}KB, queue=${audioQueueRef.current.length}, processing=${isProcessingQueueRef.current}`);
-              }
-
               // Process queue if not already processing
               if (!isProcessingQueueRef.current) {
                 isProcessingQueueRef.current = true;
@@ -627,7 +605,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             if (message.serverContent?.interrupted) {
-              console.log(`⚡ Audio INTERRUPTED! Clearing ${audioQueueRef.current.length} queued, ${sourcesRef.current.size} active`);
               // Clear queue immediately on interruption
               audioQueueRef.current = [];
               sourcesRef.current.forEach(src => {
