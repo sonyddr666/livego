@@ -431,6 +431,13 @@ export async function fetchPage(
         // Normalize URL
         if (!url.startsWith('http')) url = 'https://' + url;
 
+        // AUTO-DETECT YouTube URLs → use TubeText API instead of CORS proxy
+        const videoId = extractVideoId(url);
+        if (videoId) {
+            console.log(`📺 YouTube detected! videoId=${videoId}, using TubeText API...`);
+            return await fetchYoutubeTranscript(videoId);
+        }
+
         // Fetch using CORS proxies (direct fetch always fails due to CORS in browser)
         let html: string = '';
         let fetchSuccess = false;
@@ -695,12 +702,6 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 call.args.url,
                 call.args.mode || 'full',
                 call.args.query
-            );
-
-        case 'yt_transcript':
-            return await fetchYoutubeTranscript(
-                call.args.videoId,
-                call.args.lang || 'pt-BR'
             );
 
         default:

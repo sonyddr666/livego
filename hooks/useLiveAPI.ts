@@ -59,23 +59,14 @@ BUSCA NA WEB (Google Search):
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
 - Cite as fontes quando relevante
 
-ACESSO A PÁGINAS WEB (fetch_page):
+ACESSO A PÁGINAS WEB E YOUTUBE (fetch_page):
 - Quando pedirem para VER, LER, ACESSAR ou ANALISAR um site/página específica:
-  1. PLANEJE: diga ao usuário o que vai fazer ("Vou acessar [site] para [objetivo]. Um momento...")
-  2. Execute a função e apresente o resultado de forma organizada
-- Para pedidos genéricos ("pesquisa sobre React"), use Google Search. Use fetch_page apenas para URLs específicas.
-- Use mode "links" para blogs/sites com múltiplos posts ("veja os posts do site")
-- Use mode "full" para ler uma página específica
-- Use mode "specific" + query para buscar dado pontual (preço, email, data)
-- Resuma o conteúdo de forma conversacional - NÃO leia HTML bruto
-- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"
-
-TRANSCRIÇÃO DE YOUTUBE (yt_transcript):
-- O usuário vai pedir por VOZ (ex: "transcreva aquele vídeo sobre Docker", "resume o último vídeo do Fireship")
-- PRIMEIRO: use Google Search para encontrar o vídeo (por tema, canal ou descrição)
-- CONFIRME com o usuário: "Encontrei o vídeo [título] do canal [nome]. É esse?"
-- Só após confirmação: extraia o videoId da URL e chame yt_transcript
-- Apresente um resumo organizado da transcrição, não leia texto bruto${historyInstructions}`;
+  1. Diga ao usuário o que vai fazer ("Vou acessar [site]. Um momento...")
+  2. Execute fetch_page e apresente o resultado de forma organizada
+- Para YOUTUBE: use Google Search para encontrar o vídeo ESPECÍFICO, confirme com o usuário, e passe a URL do vídeo (youtube.com/watch?v=...) para fetch_page — a transcrição é extraída automaticamente
+- Para pedidos genéricos ("pesquisa sobre React"), use Google Search diretamente
+- Use mode "links" para sites com múltiplos posts; "full" para ler página; "specific" + query para dado pontual
+- Resuma o conteúdo de forma conversacional${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -487,43 +478,25 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             },
             {
               name: 'fetch_page',
-              description: 'Acessa e analisa o conteúdo de uma página web por URL. Use para ler sites, listar posts/artigos, ou buscar dados específicos. REGRA: sempre explique ao usuário o que vai acessar antes de chamar.',
+              description: 'Acessa o conteúdo de uma página web ou transcrição de vídeo do YouTube por URL. Para YouTube (youtube.com/watch?v=...), retorna automaticamente a transcrição. Para outros sites, retorna o texto da página. IMPORTANTE: para YouTube, primeiro use Google Search para achar o vídeo específico e confirme com o usuário.',
               parameters: {
                 type: 'object',
                 properties: {
                   url: {
                     type: 'string',
-                    description: 'URL completa da página (ex: https://example.com)'
+                    description: 'URL completa da página ou vídeo YouTube (ex: https://example.com ou https://youtube.com/watch?v=abc123)'
                   },
                   mode: {
                     type: 'string',
-                    description: 'full=texto completo da página, links=lista de links/posts do site, specific=busca dado pontual',
+                    description: 'full=texto completo, links=lista de links, specific=busca pontual. Para YouTube, use sempre full.',
                     enum: ['full', 'links', 'specific']
                   },
                   query: {
                     type: 'string',
-                    description: 'Só para mode specific: o que buscar (ex: preço, email, autor, data)'
+                    description: 'Só para mode specific: o que buscar (ex: preço, email, autor)'
                   }
                 },
                 required: ['url', 'mode']
-              }
-            },
-            {
-              name: 'yt_transcript',
-              description: 'Busca a transcrição/legendas de um vídeo do YouTube. REGRAS: 1) Use Google Search ANTES para encontrar o VÍDEO ESPECÍFICO (não o canal). 2) Confirme título e canal com o usuário. 3) Passe a URL completa do vídeo (youtube.com/watch?v=ID) ou o ID de 11 caracteres. NÃO passe URLs de canal (/videos, /@canal).',
-              parameters: {
-                type: 'object',
-                properties: {
-                  videoId: {
-                    type: 'string',
-                    description: 'URL completa do vídeo (https://youtube.com/watch?v=...) ou ID de 11 caracteres. NÃO use URLs de canal.'
-                  },
-                  lang: {
-                    type: 'string',
-                    description: 'Código do idioma das legendas (ex: pt-BR, pt, en, es). Default: pt-BR'
-                  }
-                },
-                required: ['videoId']
               }
             }
           ]
