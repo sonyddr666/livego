@@ -469,7 +469,7 @@ export async function fetchPage(
 
         // MODE: links - return list of links/posts
         if (mode === 'links') {
-            const links = extractLinks(html, url).slice(0, 8);
+            const links = extractLinks(html, url);
             return {
                 url,
                 title: pageTitle,
@@ -499,11 +499,11 @@ export async function fetchPage(
             };
         }
 
-        // MODE: full - complete text (with aggressive token economy for Live API)
-        const MAX_CONTENT = 2500;
+        // MODE: full - complete text (with token economy)
+        const MAX_CONTENT = 6000;
         const truncated = fullText.length > MAX_CONTENT;
         const content = truncated
-            ? fullText.substring(0, MAX_CONTENT) + '\n[truncado]'
+            ? fullText.substring(0, MAX_CONTENT) + '\n\n[... conteúdo truncado ...]'
             : fullText;
 
         return {
@@ -641,17 +641,19 @@ export async function fetchYoutubeTranscript(
             };
         }
 
-        // Limit to 2000 chars for Live API token economy
-        const MAX_TRANSCRIPT = 2000;
+        // Limit to 5000 chars for token economy
+        const MAX_TRANSCRIPT = 5000;
         const truncated = fullText.length > MAX_TRANSCRIPT;
 
         return {
             videoId,
-            title: apiData.details?.title || 'Sem título',
-            channel: apiData.details?.channel || 'Desconhecido',
-            transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n[truncado]' : fullText,
+            title: apiData.details?.title || 'Título não disponível',
+            channel: apiData.details?.channel || 'Canal não disponível',
+            description: apiData.details?.description?.substring(0, 200) || '',
+            transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
+            fullLength: fullText.length,
             truncated,
-            hint: 'Resuma a transcrição de forma conversacional.'
+            hint: 'Analise a transcrição e apresente um resumo organizado ao usuário. Mencione o título e canal do vídeo. Se truncada, foque nos pontos principais.'
         };
     } catch (error) {
         console.error(`📺 yt_transcript error:`, error);
