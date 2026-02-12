@@ -10,7 +10,7 @@ class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buffer = [];
-    this.bufferSize = 2048; // Reduced from 4096 for lower latency
+    this.bufferSize = 4096; // Stable buffer size to prevent audio cuts
   }
 
   process(inputs, outputs, parameters) {
@@ -114,6 +114,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
   const isAudioSendingRef = useRef(false);
 
+  // Transcript debouncing - batch updates to avoid re-render storms
+  const pendingTranscriptRef = useRef('');
+  const transcriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
@@ -185,7 +189,25 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     });
   }, []);
 
-  // Async playback loop - processes audio queue without blocking onmessage
+  // Flush pending transcript to React state (debounced)
+  const flushTranscript = useCallback(() => {
+    if (pendingTranscriptRef.current) {
+      const pending = pendingTranscriptRef.current;
+      pendingTranscriptRef.current = '';
+      setTranscript(prev => prev + pending);
+    }
+    transcriptTimerRef.current = null;
+  }, []);
+
+  // Queue transcript text with debouncing (300ms batches)
+  const queueTranscript = useCallback((text: string) => {
+    pendingTranscriptRef.current += text;
+    if (!transcriptTimerRef.current) {
+      transcriptTimerRef.current = setTimeout(flushTranscript, 300);
+    }
+  }, [flushTranscript]);
+
+  // Async playback loop - processes audio queue yielding between chunks
   const processAudioQueue = useCallback(async (outputNode: GainNode) => {
     const ctx = outputAudioContextRef.current;
     if (!ctx) {
@@ -193,12 +215,20 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       return;
     }
 
-    while (audioQueueRef.current.length > 0) {
+    // Process one chunk at a time, then yield to browser
+    const processNext = async () => {
+      if (audioQueueRef.current.length === 0) {
+        isProcessingQueueRef.current = false;
+        return;
+      }
+
       const base64Audio = audioQueueRef.current.shift();
-      if (!base64Audio) continue;
+      if (!base64Audio) {
+        requestAnimationFrame(() => processNext());
+        return;
+      }
 
       try {
-        // Decode audio at 24kHz (Gemini's output rate)
         let audioBuffer = await decodeAudioData(
           base64ToUint8Array(base64Audio),
           ctx,
@@ -206,12 +236,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           1
         );
 
-        // Resample to system's native sample rate if different
         if (ctx.sampleRate !== 24000) {
           audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
         }
 
-        // Schedule playback
         nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
 
         const source = ctx.createBufferSource();
@@ -227,9 +255,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       } catch (error) {
         console.error('Audio decode error:', error);
       }
-    }
 
-    isProcessingQueueRef.current = false;
+      // Yield to browser before processing next chunk
+      requestAnimationFrame(() => processNext());
+    };
+
+    processNext();
   }, []);
 
   const connect = useCallback(async (config: LiveConfig) => {
@@ -529,29 +560,25 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             // Uncomment below to see ALL messages:
             // console.log('📨 Live message:', message);
 
-            // Handle Input Transcription (User)
+            // Handle Input Transcription (User) — debounced to avoid re-render storms
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text) {
                 const isNewTurn = currentSpeakerRef.current !== 'user';
                 currentSpeakerRef.current = 'user';
-                setTranscript(prev => {
-                  const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'User: ' : '';
-                  return prev + prefix + text;
-                });
+                const prefix = isNewTurn ? '\nUser: ' : '';
+                queueTranscript(prefix + text);
               }
             }
 
-            // Handle Output Transcription (Gemini)
+            // Handle Output Transcription (Gemini) — debounced
             if (message.serverContent?.outputTranscription) {
               const text = message.serverContent.outputTranscription.text;
               if (text) {
                 const isNewTurn = currentSpeakerRef.current !== 'gemini';
                 currentSpeakerRef.current = 'gemini';
-                setTranscript(prev => {
-                  const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'Gemini: ' : '';
-                  return prev + prefix + text;
-                });
+                const prefix = isNewTurn ? '\nGemini: ' : '';
+                queueTranscript(prefix + text);
               }
             }
 
