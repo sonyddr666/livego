@@ -528,22 +528,47 @@ export async function fetchPage(
  * Extract YouTube video ID from various URL formats or plain ID
  */
 function extractVideoId(input: string): string | null {
-    // Already a video ID (11 chars alphanumeric)
+    if (!input || input.trim().length === 0) return null;
+    input = input.trim();
+
+    // Already a video ID (exactly 11 chars alphanumeric + dash + underscore)
     if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
 
-    // URL formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+    // Try to parse as URL
     try {
         const url = new URL(input);
-        if (url.hostname.includes('youtube.com')) {
-            return url.searchParams.get('v') || url.pathname.split('/').pop() || null;
+        const hostname = url.hostname.toLowerCase();
+
+        // Reject non-YouTube URLs
+        if (!hostname.includes('youtube.com') && hostname !== 'youtu.be') return null;
+
+        // Reject channel/playlist/non-video URLs
+        const path = url.pathname.toLowerCase();
+        if (path.includes('/channel/') || path.includes('/@') ||
+            path.includes('/playlist') || path.includes('/user/') ||
+            path.endsWith('/videos') || path.endsWith('/shorts') ||
+            path === '/' || path === '') {
+            return null;
         }
-        if (url.hostname === 'youtu.be') {
-            return url.pathname.slice(1) || null;
+
+        // youtu.be/VIDEO_ID
+        if (hostname === 'youtu.be') {
+            const id = url.pathname.slice(1).split('/')[0];
+            return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
         }
+
+        // youtube.com/watch?v=VIDEO_ID
+        const vParam = url.searchParams.get('v');
+        if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) return vParam;
+
+        // youtube.com/embed/VIDEO_ID or youtube.com/shorts/VIDEO_ID
+        const embedMatch = url.pathname.match(/\/(embed|shorts)\/([a-zA-Z0-9_-]{11})/);
+        if (embedMatch && embedMatch[2]) return embedMatch[2];
+
     } catch {
-        // Not a URL, might be a video ID with extra text
-        const match = input.match(/[a-zA-Z0-9_-]{11}/);
-        return match ? match[0] : null;
+        // Not a valid URL - try to find an 11-char video ID pattern
+        const match = input.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[&?\s]|$)/);
+        return match ? (match[1] ?? null) : null;
     }
     return null;
 }
@@ -553,73 +578,84 @@ function extractVideoId(input: string): string | null {
  */
 export async function fetchYoutubeTranscript(
     videoIdOrUrl: string,
-    lang: string = 'pt-BR'
+    _lang: string = 'pt-BR'
 ): Promise<any> {
     const videoId = extractVideoId(videoIdOrUrl);
     if (!videoId) {
         return {
-            error: 'Não foi possível extrair o ID do vídeo. Forneça uma URL válida do YouTube.',
-            hint: 'Use Google Search para encontrar o vídeo e obter a URL correta.'
+            error: 'Não foi possível extrair o ID do vídeo. A URL precisa ser de um vídeo específico (youtube.com/watch?v=...), não de um canal.',
+            hint: 'Use Google Search para encontrar a URL exata do VÍDEO (não do canal). Procure por "site:youtube.com/watch [tema]".'
         };
     }
 
-    console.log(`📺 yt_transcript: videoId=${videoId}, lang=${lang}`);
+    console.log(`📺 yt_transcript: videoId=${videoId}`);
 
-    // Try requested language first, then fallback to alternatives
-    const langsToTry = [lang, 'pt', 'en', 'es'];
+    try {
+        const apiUrl = `https://tubetext.vercel.app/youtube/transcript?video_id=${videoId}`;
+        console.log(`📺 Fetching transcript from TubeText...`);
 
-    for (const tryLang of langsToTry) {
-        try {
-            const apiUrl = `https://tubetext.vercel.app/youtube/transcript?video_id=${videoId}&lang=${tryLang}`;
-            console.log(`📺 Trying lang=${tryLang}...`);
-
-            const resp = await fetchWithTimeout(apiUrl, 15000);
-            if (!resp.ok) {
-                console.warn(`📺 Lang ${tryLang}: HTTP ${resp.status}`);
-                continue;
-            }
-
-            const data = await resp.json();
-
-            // Extract full text
-            let fullText = '';
-            if (data.full_text) {
-                fullText = data.full_text;
-            } else if (Array.isArray(data.transcript)) {
-                fullText = data.transcript.map((t: any) => t.text || t).join(' ');
-            } else if (typeof data === 'string') {
-                fullText = data;
-            }
-
-            if (!fullText || fullText.length < 10) {
-                console.warn(`📺 Lang ${tryLang}: empty transcript`);
-                continue;
-            }
-
-            // Limit to 5000 chars for token economy
-            const MAX_TRANSCRIPT = 5000;
-            const truncated = fullText.length > MAX_TRANSCRIPT;
-
+        const resp = await fetchWithTimeout(apiUrl, 15000);
+        if (!resp.ok) {
+            console.error(`📺 TubeText HTTP ${resp.status}`);
             return {
                 videoId,
-                language: tryLang,
-                title: data.details?.title || data.title || 'Título não disponível',
-                channel: data.details?.channel || data.channel || 'Canal não disponível',
-                transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
-                fullLength: fullText.length,
-                truncated,
-                hint: 'Analise a transcrição e apresente um resumo organizado ao usuário. Se truncada, foque nos pontos principais.'
+                error: `API retornou erro HTTP ${resp.status}. O vídeo pode não ter legendas.`,
+                hint: 'Informe ao usuário que não foi possível obter a transcrição. O vídeo pode não ter legendas disponíveis.'
             };
-        } catch (error) {
-            console.warn(`📺 Lang ${tryLang} failed:`, error);
         }
-    }
 
-    return {
-        videoId,
-        error: 'Não foi possível obter a transcrição. O vídeo pode não ter legendas disponíveis.',
-        hint: 'Informe ao usuário que o vídeo não possui legendas/transcrição. Sugira que tente outro vídeo.'
-    };
+        const response = await resp.json();
+        console.log(`📺 TubeText response:`, { success: response.success, hasData: !!response.data });
+
+        // API returns { success: true, data: { video_id, transcript, full_text, details } }
+        if (!response.success || !response.data) {
+            return {
+                videoId,
+                error: 'API retornou resposta sem dados. O vídeo pode não ter legendas.',
+                hint: 'Informe ao usuário que a transcrição não está disponível para este vídeo.'
+            };
+        }
+
+        const apiData = response.data;
+
+        // Extract full text
+        let fullText = '';
+        if (apiData.full_text) {
+            fullText = apiData.full_text;
+        } else if (Array.isArray(apiData.transcript)) {
+            fullText = apiData.transcript.map((t: any) => typeof t === 'string' ? t : (t.text || '')).join(' ');
+        }
+
+        if (!fullText || fullText.length < 10) {
+            return {
+                videoId,
+                error: 'Transcrição vazia ou muito curta.',
+                hint: 'O vídeo pode não ter legendas disponíveis. Sugira que tente outro vídeo.'
+            };
+        }
+
+        // Limit to 5000 chars for token economy
+        const MAX_TRANSCRIPT = 5000;
+        const truncated = fullText.length > MAX_TRANSCRIPT;
+
+        return {
+            videoId,
+            title: apiData.details?.title || 'Título não disponível',
+            channel: apiData.details?.channel || 'Canal não disponível',
+            description: apiData.details?.description?.substring(0, 200) || '',
+            transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
+            fullLength: fullText.length,
+            truncated,
+            hint: 'Analise a transcrição e apresente um resumo organizado ao usuário. Mencione o título e canal do vídeo. Se truncada, foque nos pontos principais.'
+        };
+    } catch (error) {
+        console.error(`📺 yt_transcript error:`, error);
+        return {
+            videoId,
+            error: `Falha ao buscar transcrição: ${(error as Error).message}`,
+            hint: 'Informe ao usuário que houve um erro ao acessar a API. Sugira tentar novamente.'
+        };
+    }
 }
 
 // ============================================================
