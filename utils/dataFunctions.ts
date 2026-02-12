@@ -521,6 +521,108 @@ export async function fetchPage(
 }
 
 // ============================================================
+// YouTube Transcript Functions
+// ============================================================
+
+/**
+ * Extract YouTube video ID from various URL formats or plain ID
+ */
+function extractVideoId(input: string): string | null {
+    // Already a video ID (11 chars alphanumeric)
+    if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+
+    // URL formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+    try {
+        const url = new URL(input);
+        if (url.hostname.includes('youtube.com')) {
+            return url.searchParams.get('v') || url.pathname.split('/').pop() || null;
+        }
+        if (url.hostname === 'youtu.be') {
+            return url.pathname.slice(1) || null;
+        }
+    } catch {
+        // Not a URL, might be a video ID with extra text
+        const match = input.match(/[a-zA-Z0-9_-]{11}/);
+        return match ? match[0] : null;
+    }
+    return null;
+}
+
+/**
+ * Fetch YouTube video transcript using TubeText API
+ */
+export async function fetchYoutubeTranscript(
+    videoIdOrUrl: string,
+    lang: string = 'pt-BR'
+): Promise<any> {
+    const videoId = extractVideoId(videoIdOrUrl);
+    if (!videoId) {
+        return {
+            error: 'Não foi possível extrair o ID do vídeo. Forneça uma URL válida do YouTube.',
+            hint: 'Use Google Search para encontrar o vídeo e obter a URL correta.'
+        };
+    }
+
+    console.log(`📺 yt_transcript: videoId=${videoId}, lang=${lang}`);
+
+    // Try requested language first, then fallback to alternatives
+    const langsToTry = [lang, 'pt', 'en', 'es'];
+
+    for (const tryLang of langsToTry) {
+        try {
+            const apiUrl = `https://tubetext.vercel.app/youtube/transcript?video_id=${videoId}&lang=${tryLang}`;
+            console.log(`📺 Trying lang=${tryLang}...`);
+
+            const resp = await fetchWithTimeout(apiUrl, 15000);
+            if (!resp.ok) {
+                console.warn(`📺 Lang ${tryLang}: HTTP ${resp.status}`);
+                continue;
+            }
+
+            const data = await resp.json();
+
+            // Extract full text
+            let fullText = '';
+            if (data.full_text) {
+                fullText = data.full_text;
+            } else if (Array.isArray(data.transcript)) {
+                fullText = data.transcript.map((t: any) => t.text || t).join(' ');
+            } else if (typeof data === 'string') {
+                fullText = data;
+            }
+
+            if (!fullText || fullText.length < 10) {
+                console.warn(`📺 Lang ${tryLang}: empty transcript`);
+                continue;
+            }
+
+            // Limit to 5000 chars for token economy
+            const MAX_TRANSCRIPT = 5000;
+            const truncated = fullText.length > MAX_TRANSCRIPT;
+
+            return {
+                videoId,
+                language: tryLang,
+                title: data.details?.title || data.title || 'Título não disponível',
+                channel: data.details?.channel || data.channel || 'Canal não disponível',
+                transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
+                fullLength: fullText.length,
+                truncated,
+                hint: 'Analise a transcrição e apresente um resumo organizado ao usuário. Se truncada, foque nos pontos principais.'
+            };
+        } catch (error) {
+            console.warn(`📺 Lang ${tryLang} failed:`, error);
+        }
+    }
+
+    return {
+        videoId,
+        error: 'Não foi possível obter a transcrição. O vídeo pode não ter legendas disponíveis.',
+        hint: 'Informe ao usuário que o vídeo não possui legendas/transcrição. Sugira que tente outro vídeo.'
+    };
+}
+
+// ============================================================
 // Tool Call Handler
 // ============================================================
 
@@ -557,6 +659,12 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 call.args.url,
                 call.args.mode || 'full',
                 call.args.query
+            );
+
+        case 'yt_transcript':
+            return await fetchYoutubeTranscript(
+                call.args.videoId,
+                call.args.lang || 'pt-BR'
             );
 
         default:

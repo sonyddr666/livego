@@ -68,7 +68,14 @@ ACESSO A PÁGINAS WEB (fetch_page):
 - Use mode "full" para ler uma página específica
 - Use mode "specific" + query para buscar dado pontual (preço, email, data)
 - Resuma o conteúdo de forma conversacional - NÃO leia HTML bruto
-- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"${historyInstructions}`;
+- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"
+
+TRANSCRIÇÃO DE YOUTUBE (yt_transcript):
+- O usuário vai pedir por VOZ (ex: "transcreva aquele vídeo sobre Docker", "resume o último vídeo do Fireship")
+- PRIMEIRO: use Google Search para encontrar o vídeo (por tema, canal ou descrição)
+- CONFIRME com o usuário: "Encontrei o vídeo [título] do canal [nome]. É esse?"
+- Só após confirmação: extraia o videoId da URL e chame yt_transcript
+- Apresente um resumo organizado da transcrição, não leia texto bruto${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -499,6 +506,24 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   }
                 },
                 required: ['url', 'mode']
+              }
+            },
+            {
+              name: 'yt_transcript',
+              description: 'Busca a transcrição/legendas de um vídeo do YouTube. REGRA: use Google Search ANTES para encontrar o vídeo, confirme com o usuário qual vídeo é, e só então chame esta função com o videoId.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  videoId: {
+                    type: 'string',
+                    description: 'ID do vídeo do YouTube (11 caracteres, ex: dQw4w9WgXcQ) ou URL completa'
+                  },
+                  lang: {
+                    type: 'string',
+                    description: 'Código do idioma das legendas (ex: pt-BR, pt, en, es). Default: pt-BR'
+                  }
+                },
+                required: ['videoId']
               }
             }
           ]
