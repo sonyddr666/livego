@@ -431,22 +431,6 @@ export async function fetchPage(
         // Normalize URL
         if (!url.startsWith('http')) url = 'https://' + url;
 
-        // BLOCK internal Google grounding URLs (they return 1MB+ HTML and crash WebSocket)
-        if (url.includes('vertexaisearch.cloud.google.com') || url.includes('grounding-api-redirect')) {
-            console.warn(`🚫 Blocked grounding URL: ${url.substring(0, 80)}...`);
-            return {
-                error: 'Esta é uma URL interna do Google Search. Não precisa acessar - os resultados da busca já foram fornecidos acima.',
-                hint: 'Use as informações do Google Search grounding que já foram retornadas. Não tente acessar URLs de grounding.'
-            };
-        }
-
-        // AUTO-DETECT YouTube URLs → use TubeText API instead of CORS proxy
-        const videoId = extractVideoId(url);
-        if (videoId) {
-            console.log(`📺 YouTube detected! videoId=${videoId}, using TubeText API...`);
-            return await fetchYoutubeTranscript(videoId);
-        }
-
         // Fetch using CORS proxies (direct fetch always fails due to CORS in browser)
         let html: string = '';
         let fetchSuccess = false;
@@ -509,7 +493,7 @@ export async function fetchPage(
         }
 
         // MODE: full - complete text (with token economy)
-        const MAX_CONTENT = 3000;
+        const MAX_CONTENT = 6000;
         const truncated = fullText.length > MAX_CONTENT;
         const content = truncated
             ? fullText.substring(0, MAX_CONTENT) + '\n\n[... conteúdo truncado ...]'
@@ -532,194 +516,6 @@ export async function fetchPage(
             url,
             error: `Não foi possível acessar: ${(error as Error).message}`,
             hint: 'Informe ao usuário que o site pode estar bloqueando acesso, fora do ar, ou exigir login. Sugira tentar outra URL.'
-        };
-    }
-}
-
-// ============================================================
-// YouTube Transcript Functions
-// ============================================================
-
-/**
- * Extract YouTube video ID from various URL formats or plain ID
- */
-function extractVideoId(input: string): string | null {
-    if (!input || input.trim().length === 0) return null;
-    input = input.trim();
-
-    // Already a video ID (exactly 11 chars alphanumeric + dash + underscore)
-    if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
-
-    // Try to parse as URL
-    try {
-        const url = new URL(input);
-        const hostname = url.hostname.toLowerCase();
-
-        // Reject non-YouTube URLs
-        if (!hostname.includes('youtube.com') && hostname !== 'youtu.be') return null;
-
-        // Reject channel/playlist/non-video URLs
-        const path = url.pathname.toLowerCase();
-        if (path.includes('/channel/') || path.includes('/@') ||
-            path.includes('/playlist') || path.includes('/user/') ||
-            path.endsWith('/videos') || path.endsWith('/shorts') ||
-            path === '/' || path === '') {
-            return null;
-        }
-
-        // youtu.be/VIDEO_ID
-        if (hostname === 'youtu.be') {
-            const id = url.pathname.slice(1).split('/')[0];
-            return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
-        }
-
-        // youtube.com/watch?v=VIDEO_ID
-        const vParam = url.searchParams.get('v');
-        if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) return vParam;
-
-        // youtube.com/embed/VIDEO_ID or youtube.com/shorts/VIDEO_ID
-        const embedMatch = url.pathname.match(/\/(embed|shorts)\/([a-zA-Z0-9_-]{11})/);
-        if (embedMatch && embedMatch[2]) return embedMatch[2];
-
-    } catch {
-        // Not a valid URL - try to find an 11-char video ID pattern
-        const match = input.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[&?\s]|$)/);
-        return match ? (match[1] ?? null) : null;
-    }
-    return null;
-}
-
-/**
- * Fetch YouTube video transcript using TubeText API
- */
-export async function fetchYoutubeTranscript(
-    videoIdOrUrl: string,
-    _lang: string = 'pt-BR'
-): Promise<any> {
-    const videoId = extractVideoId(videoIdOrUrl);
-    if (!videoId) {
-        return {
-            error: 'Não foi possível extrair o ID do vídeo. A URL precisa ser de um vídeo específico (youtube.com/watch?v=...), não de um canal.',
-            hint: 'Use Google Search para encontrar a URL exata do VÍDEO (não do canal). Procure por "site:youtube.com/watch [tema]".'
-        };
-    }
-
-    console.log(`📺 yt_transcript: videoId=${videoId}`);
-
-    try {
-        const apiUrl = `https://tubetext.vercel.app/youtube/transcript?video_id=${videoId}`;
-        console.log(`📺 Fetching transcript from TubeText...`);
-
-        // Try direct fetch first, then CORS proxies (Android blocks direct CORS)
-        let resp: Response | null = null;
-        try {
-            resp = await fetchWithTimeout(apiUrl, 12000);
-        } catch (directError) {
-            console.warn(`📺 Direct TubeText fetch failed (CORS?), trying proxies...`);
-        }
-
-        if (!resp || !resp.ok) {
-            for (let i = 0; i < CORS_PROXIES.length; i++) {
-                const proxyFn = CORS_PROXIES[i];
-                if (!proxyFn) continue;
-                try {
-                    console.log(`📺 Trying TubeText proxy ${i + 1}/${CORS_PROXIES.length}...`);
-                    resp = await fetchWithTimeout(proxyFn(apiUrl), 15000);
-                    if (resp.ok) {
-                        console.log(`📺 TubeText proxy ${i + 1} OK`);
-                        break;
-                    }
-                } catch (proxyErr) {
-                    console.warn(`📺 TubeText proxy ${i + 1} failed:`, proxyErr);
-                }
-            }
-        }
-
-        if (!resp || !resp.ok) {
-            return {
-                videoId,
-                error: `Não foi possível acessar a API de transcrição. ${resp ? `HTTP ${resp.status}` : 'Nenhum proxy disponível.'}`,
-                hint: 'Informe ao usuário que houve um erro de conexão. Sugira tentar novamente.'
-            };
-        }
-
-        const response = await resp.json();
-        console.log(`📺 TubeText raw response keys:`, Object.keys(response));
-
-        // Some proxies wrap the response, try to unwrap
-        // API can return: { success, data: { transcript, full_text, details } }
-        // Or directly: { transcript, full_text, video_id }
-        // Or proxy wraps: { contents: "..." } (allorigins)
-
-        let apiData = response;
-
-        // If response has success/data wrapper
-        if (response.data && typeof response.data === 'object') {
-            apiData = response.data;
-        }
-
-        // If proxy returned text content, try to parse as JSON
-        if (response.contents && typeof response.contents === 'string') {
-            try {
-                const parsed = JSON.parse(response.contents);
-                apiData = parsed.data || parsed;
-            } catch {
-                console.warn(`📺 Could not parse proxy contents as JSON`);
-            }
-        }
-
-        // Check if we have usable data
-        const hasTranscript = apiData.full_text || apiData.transcript ||
-            (Array.isArray(apiData) && apiData.length > 0);
-
-        if (!hasTranscript) {
-            console.warn(`📺 No transcript data found. Response:`, JSON.stringify(response).substring(0, 500));
-            return {
-                videoId,
-                error: 'API retornou resposta sem transcrição. O vídeo pode não ter legendas ou a API está instável.',
-                hint: 'Informe ao usuário que a transcrição não está disponível. Sugira verificar se o vídeo tem legendas.'
-            };
-        }
-
-        // Extract full text from various formats
-        let fullText = '';
-        if (typeof apiData.full_text === 'string') {
-            fullText = apiData.full_text;
-        } else if (Array.isArray(apiData.transcript)) {
-            fullText = apiData.transcript.map((t: any) => typeof t === 'string' ? t : (t.text || '')).join(' ');
-        } else if (Array.isArray(apiData)) {
-            fullText = apiData.map((t: any) => typeof t === 'string' ? t : (t.text || '')).join(' ');
-        } else if (typeof apiData.transcript === 'string') {
-            fullText = apiData.transcript;
-        }
-
-        if (!fullText || fullText.length < 10) {
-            return {
-                videoId,
-                error: 'Transcrição vazia ou muito curta.',
-                hint: 'O vídeo pode não ter legendas disponíveis. Sugira que tente outro vídeo.'
-            };
-        }
-
-        // Limit to 3000 chars for WebSocket safety
-        const MAX_TRANSCRIPT = 3000;
-        const truncated = fullText.length > MAX_TRANSCRIPT;
-
-        return {
-            videoId,
-            title: apiData.details?.title || apiData.title || 'Título não disponível',
-            channel: apiData.details?.channel || apiData.channel || '',
-            transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
-            fullLength: fullText.length,
-            truncated,
-            hint: 'Analise a transcrição e apresente um resumo organizado ao usuário.'
-        };
-    } catch (error) {
-        console.error(`📺 yt_transcript error:`, error);
-        return {
-            videoId,
-            error: `Falha ao buscar transcrição: ${(error as Error).message}`,
-            hint: 'Informe ao usuário que houve um erro ao acessar a API. Sugira tentar novamente.'
         };
     }
 }
@@ -762,13 +558,6 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 call.args.mode || 'full',
                 call.args.query
             );
-
-        case 'yt_transcript': {
-            const vidInput = call.args.videoId || '';
-            const vid = extractVideoId(vidInput) || vidInput;
-            console.log(`📺 yt_transcript: videoId=${vid}`);
-            return await fetchYoutubeTranscript(vid);
-        }
 
         default:
             return { error: `Função ${call.name} não implementada` };

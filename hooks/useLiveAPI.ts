@@ -10,7 +10,7 @@ class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buffer = [];
-    this.bufferSize = 4096; // Stable buffer size to prevent audio cuts
+    this.bufferSize = 2048; // Reduced from 4096 for lower latency
   }
 
   process(inputs, outputs, parameters) {
@@ -61,17 +61,14 @@ BUSCA NA WEB (Google Search):
 
 ACESSO A PÁGINAS WEB (fetch_page):
 - Quando pedirem para VER, LER, ACESSAR ou ANALISAR um site/página específica:
-  1. Diga ao usuário o que vai fazer ("Vou acessar [site]. Um momento...")
-  2. Execute fetch_page e apresente o resultado de forma organizada
-- Para pedidos genéricos ("pesquisa sobre React"), use Google Search diretamente
-- Use mode "links" para sites com múltiplos posts; "full" para ler página; "specific" + query para dado pontual
-- NUNCA tente acessar URLs de vertexaisearch.cloud.google.com - os dados já foram fornecidos pelo Google Search
-
-TRANSCRIÇÃO DE YOUTUBE (yt_transcript):
-- SEMPRE use a ferramenta yt_transcript para transcrições de vídeos do YouTube. NÃO use fetch_page para YouTube.
-- Fluxo OBRIGATÓRIO: 1) Use Google Search para encontrar o VÍDEO ESPECÍFICO 2) Confirme com o usuário 3) Chame yt_transcript com a URL ou videoId de 11 caracteres
-- Aceita URL completa (youtube.com/watch?v=...) ou ID de 11 caracteres
-- Resuma o conteúdo de forma conversacional${historyInstructions}`;
+  1. PLANEJE: diga ao usuário o que vai fazer ("Vou acessar [site] para [objetivo]. Um momento...")
+  2. Execute a função e apresente o resultado de forma organizada
+- Para pedidos genéricos ("pesquisa sobre React"), use Google Search. Use fetch_page apenas para URLs específicas.
+- Use mode "links" para blogs/sites com múltiplos posts ("veja os posts do site")
+- Use mode "full" para ler uma página específica
+- Use mode "specific" + query para buscar dado pontual (preço, email, data)
+- Resuma o conteúdo de forma conversacional - NÃO leia HTML bruto
+- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -125,10 +122,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const isMutedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
   const isAudioSendingRef = useRef(false);
-
-  // Transcript debouncing - batch updates to avoid re-render storms
-  const pendingTranscriptRef = useRef('');
-  const transcriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -201,25 +194,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     });
   }, []);
 
-  // Flush pending transcript to React state (debounced)
-  const flushTranscript = useCallback(() => {
-    if (pendingTranscriptRef.current) {
-      const pending = pendingTranscriptRef.current;
-      pendingTranscriptRef.current = '';
-      setTranscript(prev => prev + pending);
-    }
-    transcriptTimerRef.current = null;
-  }, []);
-
-  // Queue transcript text with debouncing (300ms batches)
-  const queueTranscript = useCallback((text: string) => {
-    pendingTranscriptRef.current += text;
-    if (!transcriptTimerRef.current) {
-      transcriptTimerRef.current = setTimeout(flushTranscript, 300);
-    }
-  }, [flushTranscript]);
-
-  // Async playback loop - while loop with await naturally yields to event loop
+  // Async playback loop - processes audio queue without blocking onmessage
   const processAudioQueue = useCallback(async (outputNode: GainNode) => {
     const ctx = outputAudioContextRef.current;
     if (!ctx) {
@@ -232,6 +207,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       if (!base64Audio) continue;
 
       try {
+        // Decode audio at 24kHz (Gemini's output rate)
         let audioBuffer = await decodeAudioData(
           base64ToUint8Array(base64Audio),
           ctx,
@@ -239,10 +215,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           1
         );
 
+        // Resample to system's native sample rate if different
         if (ctx.sampleRate !== 24000) {
           audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
         }
 
+        // Schedule playback
         nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
 
         const source = ctx.createBufferSource();
@@ -502,17 +480,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             },
             {
               name: 'fetch_page',
-              description: 'Acessa o conteúdo de uma página web ou transcrição de vídeo do YouTube por URL. Para YouTube (youtube.com/watch?v=...), retorna automaticamente a transcrição. Para outros sites, retorna o texto da página. IMPORTANTE: para YouTube, primeiro use Google Search para achar o vídeo específico e confirme com o usuário.',
+              description: 'Acessa e analisa o conteúdo de uma página web por URL. Use para ler sites, listar posts/artigos, ou buscar dados específicos. REGRA: sempre explique ao usuário o que vai acessar antes de chamar.',
               parameters: {
                 type: 'object',
                 properties: {
                   url: {
                     type: 'string',
-                    description: 'URL completa da página ou vídeo YouTube (ex: https://example.com ou https://youtube.com/watch?v=abc123)'
+                    description: 'URL completa da página (ex: https://example.com)'
                   },
                   mode: {
                     type: 'string',
-                    description: 'full=texto completo, links=lista de links, specific=busca pontual. Para YouTube, use sempre full.',
+                    description: 'full=texto completo da página, links=lista de links/posts do site, specific=busca dado pontual',
                     enum: ['full', 'links', 'specific']
                   },
                   query: {
@@ -521,20 +499,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   }
                 },
                 required: ['url', 'mode']
-              }
-            },
-            {
-              name: 'yt_transcript',
-              description: 'Busca a transcrição/legendas de um vídeo do YouTube. REGRAS: 1) Use Google Search ANTES para encontrar o VÍDEO ESPECÍFICO (não o canal). 2) Confirme título e canal com o usuário. 3) Passe a URL completa do vídeo (youtube.com/watch?v=ID) ou o ID de 11 caracteres. NÃO passe URLs de canal (/videos, /@canal).',
-              parameters: {
-                type: 'object',
-                properties: {
-                  videoId: {
-                    type: 'string',
-                    description: 'URL completa do vídeo (https://youtube.com/watch?v=...) ou ID de 11 caracteres. NÃO use URLs de canal.'
-                  }
-                },
-                required: ['videoId']
               }
             }
           ]
@@ -574,25 +538,29 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             // Uncomment below to see ALL messages:
             // console.log('📨 Live message:', message);
 
-            // Handle Input Transcription (User) — debounced to avoid re-render storms
+            // Handle Input Transcription (User)
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text) {
                 const isNewTurn = currentSpeakerRef.current !== 'user';
                 currentSpeakerRef.current = 'user';
-                const prefix = isNewTurn ? '\nUser: ' : '';
-                queueTranscript(prefix + text);
+                setTranscript(prev => {
+                  const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'User: ' : '';
+                  return prev + prefix + text;
+                });
               }
             }
 
-            // Handle Output Transcription (Gemini) — debounced
+            // Handle Output Transcription (Gemini)
             if (message.serverContent?.outputTranscription) {
               const text = message.serverContent.outputTranscription.text;
               if (text) {
                 const isNewTurn = currentSpeakerRef.current !== 'gemini';
                 currentSpeakerRef.current = 'gemini';
-                const prefix = isNewTurn ? '\nGemini: ' : '';
-                queueTranscript(prefix + text);
+                setTranscript(prev => {
+                  const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'Gemini: ' : '';
+                  return prev + prefix + text;
+                });
               }
             }
 
