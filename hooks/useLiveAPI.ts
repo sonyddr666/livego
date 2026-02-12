@@ -534,6 +534,20 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 },
                 required: ['url', 'mode']
               }
+            },
+            {
+              name: 'yt_transcript',
+              description: 'Busca a transcrição/legendas de um vídeo do YouTube. REGRAS: 1) Use Google Search ANTES para encontrar o VÍDEO ESPECÍFICO (não o canal). 2) Confirme título e canal com o usuário. 3) Passe a URL completa do vídeo (youtube.com/watch?v=ID) ou o ID de 11 caracteres. NÃO passe URLs de canal (/videos, /@canal).',
+              parameters: {
+                type: 'object',
+                properties: {
+                  videoId: {
+                    type: 'string',
+                    description: 'URL completa do vídeo (https://youtube.com/watch?v=...) ou ID de 11 caracteres. NÃO use URLs de canal.'
+                  }
+                },
+                required: ['videoId']
+              }
             }
           ]
         });

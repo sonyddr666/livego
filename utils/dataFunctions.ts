@@ -727,6 +727,13 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 call.args.query
             );
 
+        case 'yt_transcript': {
+            const vidInput = call.args.videoId || '';
+            const vid = extractVideoId(vidInput) || vidInput;
+            console.log(`📺 yt_transcript: videoId=${vid}`);
+            return await fetchYoutubeTranscript(vid);
+        }
+
         default:
             return { error: `Função ${call.name} não implementada` };
     }
