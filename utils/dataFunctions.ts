@@ -331,7 +331,25 @@ export async function getEmotionStatistics(period: string): Promise<EmotionStati
 // Web Fetch Functions
 // ============================================================
 
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const CORS_PROXIES = [
+    (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+/**
+ * Fetch with timeout using AbortController (compatible with all browsers)
+ */
+async function fetchWithTimeout(url: string, timeoutMs: number = 12000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const resp = await fetch(url, { signal: controller.signal });
+        return resp;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
 
 /**
  * Strip HTML tags and clean up text content
@@ -413,24 +431,29 @@ export async function fetchPage(
         // Normalize URL
         if (!url.startsWith('http')) url = 'https://' + url;
 
-        // Fetch with CORS fallback
-        let html: string;
-        try {
-            const resp = await fetch(url, {
-                signal: AbortSignal.timeout(10000),
-                headers: { 'Accept': 'text/html,application/xhtml+xml,*/*' }
-            });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            html = await resp.text();
-            console.log('🌐 Direct fetch OK');
-        } catch (directError) {
-            console.log('🌐 Direct fetch failed, using CORS proxy...', directError);
-            const resp = await fetch(CORS_PROXY + encodeURIComponent(url), {
-                signal: AbortSignal.timeout(15000)
-            });
-            if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
-            html = await resp.text();
-            console.log('🌐 Proxy fetch OK');
+        // Fetch using CORS proxies (direct fetch always fails due to CORS in browser)
+        let html: string = '';
+        let fetchSuccess = false;
+
+        for (let i = 0; i < CORS_PROXIES.length; i++) {
+            const proxyFn = CORS_PROXIES[i];
+            if (!proxyFn) continue;
+            const proxyUrl = proxyFn(url);
+            try {
+                console.log(`🌐 Trying proxy ${i + 1}/${CORS_PROXIES.length}...`);
+                const resp = await fetchWithTimeout(proxyUrl, 12000);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                html = await resp.text();
+                console.log(`🌐 Proxy ${i + 1} OK, got ${html.length} chars`);
+                fetchSuccess = true;
+                break;
+            } catch (proxyError) {
+                console.warn(`🌐 Proxy ${i + 1} failed:`, proxyError);
+            }
+        }
+
+        if (!fetchSuccess) {
+            throw new Error('Todos os proxies falharam. O site pode estar fora do ar ou bloqueando acesso.');
         }
 
         // Extract title
