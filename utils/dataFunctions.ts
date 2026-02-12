@@ -327,6 +327,180 @@ export async function getEmotionStatistics(period: string): Promise<EmotionStati
     }
 }
 
+// ============================================================
+// Web Fetch Functions
+// ============================================================
+
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+/**
+ * Strip HTML tags and clean up text content
+ */
+function stripHtml(html: string): string {
+    // Remove scripts, styles, SVG, nav, header, footer
+    let text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+        .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+        .replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
+
+    // Convert structural tags to newlines
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    text = text.replace(/<\/(p|div|li|h[1-6]|tr|blockquote|article|section)>/gi, '\n');
+    text = text.replace(/<li[^>]*>/gi, '• ');
+    text = text.replace(/<h([1-6])[^>]*>/gi, '\n## ');
+
+    // Remove all remaining tags
+    text = text.replace(/<[^>]+>/g, ' ');
+
+    // Decode HTML entities
+    text = text
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&mdash;/g, '—')
+        .replace(/&ndash;/g, '–')
+        .replace(/&#\d+;/g, '');
+
+    // Clean whitespace
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+
+    return text;
+}
+
+/**
+ * Extract links from HTML
+ */
+function extractLinks(html: string, baseUrl: string): Array<{ title: string; url: string }> {
+    const links: Array<{ title: string; url: string }> = [];
+    const regex = /<a[^>]+href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+
+    while ((match = regex.exec(html)) !== null) {
+        const href = match[1];
+        const title = match[2].replace(/<[^>]+>/g, '').trim();
+        if (title && href && !href.startsWith('javascript:') && title.length > 3) {
+            try {
+                const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).href;
+                links.push({ title: title.substring(0, 120), url: fullUrl });
+            } catch {
+                // Invalid URL, skip
+            }
+        }
+    }
+
+    // Deduplicate by URL
+    const unique = [...new Map(links.map(l => [l.url, l])).values()];
+    return unique.slice(0, 30);
+}
+
+/**
+ * Fetch and analyze a web page
+ * Modes: 'full' (complete text), 'links' (extract links), 'specific' (search for query)
+ */
+export async function fetchPage(
+    url: string,
+    mode: string = 'full',
+    query?: string
+): Promise<any> {
+    console.log(`🌐 fetch_page: ${url} (mode: ${mode}, query: ${query || 'none'})`);
+
+    try {
+        // Normalize URL
+        if (!url.startsWith('http')) url = 'https://' + url;
+
+        // Fetch with CORS fallback
+        let html: string;
+        try {
+            const resp = await fetch(url, {
+                signal: AbortSignal.timeout(10000),
+                headers: { 'Accept': 'text/html,application/xhtml+xml,*/*' }
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            html = await resp.text();
+            console.log('🌐 Direct fetch OK');
+        } catch (directError) {
+            console.log('🌐 Direct fetch failed, using CORS proxy...', directError);
+            const resp = await fetch(CORS_PROXY + encodeURIComponent(url), {
+                signal: AbortSignal.timeout(15000)
+            });
+            if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
+            html = await resp.text();
+            console.log('🌐 Proxy fetch OK');
+        }
+
+        // Extract title
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const pageTitle = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : 'Sem título';
+
+        // MODE: links - return list of links/posts
+        if (mode === 'links') {
+            const links = extractLinks(html, url);
+            return {
+                url,
+                title: pageTitle,
+                totalLinks: links.length,
+                links: links,
+                hint: 'Apresente os links como lista organizada. Pergunte ao usuário qual quer ler em detalhe.'
+            };
+        }
+
+        // Extract clean text
+        const fullText = stripHtml(html);
+
+        // MODE: specific - search for specific data
+        if (mode === 'specific' && query) {
+            const queryLower = query.toLowerCase();
+            const lines = fullText.split('\n').filter(l =>
+                l.toLowerCase().includes(queryLower)
+            );
+            return {
+                url,
+                title: pageTitle,
+                query,
+                found: lines.length,
+                matches: lines.slice(0, 10).map(l => l.trim().substring(0, 300)),
+                context: fullText.substring(0, 2000),
+                hint: 'Apresente os matches encontrados de forma organizada. Se não encontrou, sugira buscar com outro termo.'
+            };
+        }
+
+        // MODE: full - complete text (with token economy)
+        const MAX_CONTENT = 6000;
+        const truncated = fullText.length > MAX_CONTENT;
+        const content = truncated
+            ? fullText.substring(0, MAX_CONTENT) + '\n\n[... conteúdo truncado ...]'
+            : fullText;
+
+        return {
+            url,
+            title: pageTitle,
+            contentLength: fullText.length,
+            truncated,
+            content,
+            hint: truncated
+                ? 'O conteúdo foi resumido. Analise e apresente os pontos principais. Se o usuário precisar de mais detalhes, use mode "specific" com uma query.'
+                : 'Analise e apresente o conteúdo de forma conversacional e organizada.'
+        };
+
+    } catch (error) {
+        console.error('🌐 fetch_page error:', error);
+        return {
+            url,
+            error: `Não foi possível acessar: ${(error as Error).message}`,
+            hint: 'Informe ao usuário que o site pode estar bloqueando acesso, fora do ar, ou exigir login. Sugira tentar outra URL.'
+        };
+    }
+}
+
+// ============================================================
+// Tool Call Handler
+// ============================================================
+
 /**
  * Handle tool calls from Gemini
  */
@@ -354,6 +528,13 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
 
         case 'get_emotion_statistics':
             return await getEmotionStatistics(call.args.period || 'week');
+
+        case 'fetch_page':
+            return await fetchPage(
+                call.args.url,
+                call.args.mode || 'full',
+                call.args.query
+            );
 
         default:
             return { error: `Função ${call.name} não implementada` };

@@ -50,13 +50,25 @@ PADRÕES PARA FUNCTIONS DE HISTÓRICO:
   return `${baseInstruction}
 
 CAPACIDADES AVANÇADAS:
-1. Busca na web em tempo real (Google Search)${useHistory ? '\n2. Acesso a histórico de conversas (functions)' : ''}
+1. Busca na web em tempo real (Google Search)
+2. Acesso a páginas web específicas (fetch_page)${useHistory ? '\n3. Acesso a histórico de conversas (functions)' : ''}
 
 BUSCA NA WEB (Google Search):
 - Se o usuário perguntar sobre notícias, eventos atuais, preços, clima, ou qualquer informação que possa mudar com o tempo, USE A BUSCA
 - NÃO invente informações - se não tiver certeza, busque
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
-- Cite as fontes quando relevante${historyInstructions}`;
+- Cite as fontes quando relevante
+
+ACESSO A PÁGINAS WEB (fetch_page):
+- Quando pedirem para VER, LER, ACESSAR ou ANALISAR um site/página específica:
+  1. PLANEJE: diga ao usuário o que vai fazer ("Vou acessar [site] para [objetivo]. Um momento...")
+  2. Execute a função e apresente o resultado de forma organizada
+- Para pedidos genéricos ("pesquisa sobre React"), use Google Search. Use fetch_page apenas para URLs específicas.
+- Use mode "links" para blogs/sites com múltiplos posts ("veja os posts do site")
+- Use mode "full" para ler uma página específica
+- Use mode "specific" + query para buscar dado pontual (preço, email, data)
+- Resuma o conteúdo de forma conversacional - NÃO leia HTML bruto
+- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -464,6 +476,29 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   }
                 },
                 required: ['period']
+              }
+            },
+            {
+              name: 'fetch_page',
+              description: 'Acessa e analisa o conteúdo de uma página web por URL. Use para ler sites, listar posts/artigos, ou buscar dados específicos. REGRA: sempre explique ao usuário o que vai acessar antes de chamar.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  url: {
+                    type: 'string',
+                    description: 'URL completa da página (ex: https://example.com)'
+                  },
+                  mode: {
+                    type: 'string',
+                    description: 'full=texto completo da página, links=lista de links/posts do site, specific=busca dado pontual',
+                    enum: ['full', 'links', 'specific']
+                  },
+                  query: {
+                    type: 'string',
+                    description: 'Só para mode specific: o que buscar (ex: preço, email, autor, data)'
+                  }
+                },
+                required: ['url', 'mode']
               }
             }
           ]
