@@ -431,6 +431,15 @@ export async function fetchPage(
         // Normalize URL
         if (!url.startsWith('http')) url = 'https://' + url;
 
+        // BLOCK internal Google grounding URLs (they return 1MB+ HTML and crash WebSocket)
+        if (url.includes('vertexaisearch.cloud.google.com') || url.includes('grounding-api-redirect')) {
+            console.warn(`🚫 Blocked grounding URL: ${url.substring(0, 80)}...`);
+            return {
+                error: 'Esta é uma URL interna do Google Search. Não precisa acessar - os resultados da busca já foram fornecidos acima.',
+                hint: 'Use as informações do Google Search grounding que já foram retornadas. Não tente acessar URLs de grounding.'
+            };
+        }
+
         // AUTO-DETECT YouTube URLs → use TubeText API instead of CORS proxy
         const videoId = extractVideoId(url);
         if (videoId) {
@@ -500,7 +509,7 @@ export async function fetchPage(
         }
 
         // MODE: full - complete text (with token economy)
-        const MAX_CONTENT = 6000;
+        const MAX_CONTENT = 3000;
         const truncated = fullText.length > MAX_CONTENT;
         const content = truncated
             ? fullText.substring(0, MAX_CONTENT) + '\n\n[... conteúdo truncado ...]'
