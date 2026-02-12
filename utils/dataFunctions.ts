@@ -601,13 +601,36 @@ export async function fetchYoutubeTranscript(
         const apiUrl = `https://tubetext.vercel.app/youtube/transcript?video_id=${videoId}`;
         console.log(`📺 Fetching transcript from TubeText...`);
 
-        const resp = await fetchWithTimeout(apiUrl, 15000);
-        if (!resp.ok) {
-            console.error(`📺 TubeText HTTP ${resp.status}`);
+        // Try direct fetch first, then CORS proxies (Android blocks direct CORS)
+        let resp: Response | null = null;
+        try {
+            resp = await fetchWithTimeout(apiUrl, 12000);
+        } catch (directError) {
+            console.warn(`📺 Direct TubeText fetch failed (CORS?), trying proxies...`);
+        }
+
+        if (!resp || !resp.ok) {
+            for (let i = 0; i < CORS_PROXIES.length; i++) {
+                const proxyFn = CORS_PROXIES[i];
+                if (!proxyFn) continue;
+                try {
+                    console.log(`📺 Trying TubeText proxy ${i + 1}/${CORS_PROXIES.length}...`);
+                    resp = await fetchWithTimeout(proxyFn(apiUrl), 15000);
+                    if (resp.ok) {
+                        console.log(`📺 TubeText proxy ${i + 1} OK`);
+                        break;
+                    }
+                } catch (proxyErr) {
+                    console.warn(`📺 TubeText proxy ${i + 1} failed:`, proxyErr);
+                }
+            }
+        }
+
+        if (!resp || !resp.ok) {
             return {
                 videoId,
-                error: `API retornou erro HTTP ${resp.status}. O vídeo pode não ter legendas.`,
-                hint: 'Informe ao usuário que não foi possível obter a transcrição. O vídeo pode não ter legendas disponíveis.'
+                error: `Não foi possível acessar a API de transcrição. ${resp ? `HTTP ${resp.status}` : 'Nenhum proxy disponível.'}`,
+                hint: 'Informe ao usuário que houve um erro de conexão. Sugira tentar novamente.'
             };
         }
 
