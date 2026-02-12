@@ -644,25 +644,53 @@ export async function fetchYoutubeTranscript(
         }
 
         const response = await resp.json();
-        console.log(`📺 TubeText response:`, { success: response.success, hasData: !!response.data });
+        console.log(`📺 TubeText raw response keys:`, Object.keys(response));
 
-        // API returns { success: true, data: { video_id, transcript, full_text, details } }
-        if (!response.success || !response.data) {
+        // Some proxies wrap the response, try to unwrap
+        // API can return: { success, data: { transcript, full_text, details } }
+        // Or directly: { transcript, full_text, video_id }
+        // Or proxy wraps: { contents: "..." } (allorigins)
+
+        let apiData = response;
+
+        // If response has success/data wrapper
+        if (response.data && typeof response.data === 'object') {
+            apiData = response.data;
+        }
+
+        // If proxy returned text content, try to parse as JSON
+        if (response.contents && typeof response.contents === 'string') {
+            try {
+                const parsed = JSON.parse(response.contents);
+                apiData = parsed.data || parsed;
+            } catch {
+                console.warn(`📺 Could not parse proxy contents as JSON`);
+            }
+        }
+
+        // Check if we have usable data
+        const hasTranscript = apiData.full_text || apiData.transcript ||
+            (Array.isArray(apiData) && apiData.length > 0);
+
+        if (!hasTranscript) {
+            console.warn(`📺 No transcript data found. Response:`, JSON.stringify(response).substring(0, 500));
             return {
                 videoId,
-                error: 'API retornou resposta sem dados. O vídeo pode não ter legendas.',
-                hint: 'Informe ao usuário que a transcrição não está disponível para este vídeo.'
+                error: 'API retornou resposta sem transcrição. O vídeo pode não ter legendas ou a API está instável.',
+                hint: 'Informe ao usuário que a transcrição não está disponível. Sugira verificar se o vídeo tem legendas.'
             };
         }
 
-        const apiData = response.data;
-
-        // Extract full text
+        // Extract full text from various formats
         let fullText = '';
-        if (apiData.full_text) {
+        if (typeof apiData.full_text === 'string') {
             fullText = apiData.full_text;
         } else if (Array.isArray(apiData.transcript)) {
             fullText = apiData.transcript.map((t: any) => typeof t === 'string' ? t : (t.text || '')).join(' ');
+        } else if (Array.isArray(apiData)) {
+            fullText = apiData.map((t: any) => typeof t === 'string' ? t : (t.text || '')).join(' ');
+        } else if (typeof apiData.transcript === 'string') {
+            fullText = apiData.transcript;
         }
 
         if (!fullText || fullText.length < 10) {
@@ -673,19 +701,18 @@ export async function fetchYoutubeTranscript(
             };
         }
 
-        // Limit to 5000 chars for token economy
-        const MAX_TRANSCRIPT = 5000;
+        // Limit to 3000 chars for WebSocket safety
+        const MAX_TRANSCRIPT = 3000;
         const truncated = fullText.length > MAX_TRANSCRIPT;
 
         return {
             videoId,
-            title: apiData.details?.title || 'Título não disponível',
-            channel: apiData.details?.channel || 'Canal não disponível',
-            description: apiData.details?.description?.substring(0, 200) || '',
+            title: apiData.details?.title || apiData.title || 'Título não disponível',
+            channel: apiData.details?.channel || apiData.channel || '',
             transcript: truncated ? fullText.substring(0, MAX_TRANSCRIPT) + '\n\n[... transcrição truncada ...]' : fullText,
             fullLength: fullText.length,
             truncated,
-            hint: 'Analise a transcrição e apresente um resumo organizado ao usuário. Mencione o título e canal do vídeo. Se truncada, foque nos pontos principais.'
+            hint: 'Analise a transcrição e apresente um resumo organizado ao usuário.'
         };
     } catch (error) {
         console.error(`📺 yt_transcript error:`, error);
