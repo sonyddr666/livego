@@ -59,14 +59,7 @@ BUSCA NA WEB (Google Search):
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
 - Cite as fontes quando relevante
 
-ACESSO A PÁGINAS WEB E YOUTUBE (fetch_page):
-- Quando pedirem para VER, LER, ACESSAR ou ANALISAR um site/página específica:
-  1. Diga ao usuário o que vai fazer ("Vou acessar [site]. Um momento...")
-  2. Execute fetch_page e apresente o resultado de forma organizada
-- Para YOUTUBE: use Google Search para encontrar o vídeo ESPECÍFICO, confirme com o usuário, e passe a URL do vídeo (youtube.com/watch?v=...) para fetch_page — a transcrição é extraída automaticamente
-- Para pedidos genéricos ("pesquisa sobre React"), use Google Search diretamente
-- Use mode "links" para sites com múltiplos posts; "full" para ler página; "specific" + query para dado pontual
-- Resuma o conteúdo de forma conversacional${historyInstructions}`;
+ACESSO WEB (fetch_page): Para sites e YouTube. Diga "vou acessar" antes. Para YouTube, ache o vídeo via Google Search, confirme, e passe a URL. Mode: full/links/specific.${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -478,22 +471,22 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             },
             {
               name: 'fetch_page',
-              description: 'Acessa o conteúdo de uma página web ou transcrição de vídeo do YouTube por URL. Para YouTube (youtube.com/watch?v=...), retorna automaticamente a transcrição. Para outros sites, retorna o texto da página. IMPORTANTE: para YouTube, primeiro use Google Search para achar o vídeo específico e confirme com o usuário.',
+              description: 'Lê páginas web ou transcrições YouTube. Para YouTube, retorna transcrição automaticamente.',
               parameters: {
                 type: 'object',
                 properties: {
                   url: {
                     type: 'string',
-                    description: 'URL completa da página ou vídeo YouTube (ex: https://example.com ou https://youtube.com/watch?v=abc123)'
+                    description: 'URL da página ou vídeo YouTube'
                   },
                   mode: {
                     type: 'string',
-                    description: 'full=texto completo, links=lista de links, specific=busca pontual. Para YouTube, use sempre full.',
+                    description: 'full/links/specific',
                     enum: ['full', 'links', 'specific']
                   },
                   query: {
                     type: 'string',
-                    description: 'Só para mode specific: o que buscar (ex: preço, email, autor)'
+                    description: 'Busca pontual (só mode specific)'
                   }
                 },
                 required: ['url', 'mode']
