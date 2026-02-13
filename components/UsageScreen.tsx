@@ -5,24 +5,20 @@ import { useI18n } from '../i18n';
 
 interface UsageScreenProps {
   onEndCall: () => void;
-  onSettings: () => void;
   isMuted: boolean;
   toggleMute: () => void;
   isSpeakerOn: boolean;
   toggleSpeaker: () => void;
-  volume: number;
   caption: string;
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
 const UsageScreenComponent: React.FC<UsageScreenProps> = ({
   onEndCall,
-  onSettings: _onSettings,
   isMuted,
   toggleMute,
   isSpeakerOn,
   toggleSpeaker,
-  volume: _volume,
   caption,
   getAnalysers
 }) => {

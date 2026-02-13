@@ -1,8 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai';
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
-import { LiveConfig } from '../types';
+import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
+import { throttle } from '../utils/rateLimiter';
+
+// Audio constants
+const AUDIO_CONFIG = {
+  INPUT_SAMPLE_RATE: 16000,
+  OUTPUT_SAMPLE_RATE: 24000,
+  BUFFER_SIZE: 2048,
+  FFT_SIZE: 256,
+  SMOOTHING: 0.5,
+  THROTTLE_MS: 50, // Throttle audio sends to prevent overwhelming the API
+} as const;
 
 // AudioWorklet processor code as a string to avoid external file loading issues
 const workletCode = `
@@ -37,38 +48,32 @@ registerProcessor('pcm-processor', PCMProcessor);
 // Build enhanced system instruction for advanced features
 function buildAdvancedSystemInstruction(baseInstruction: string, useHistory: boolean = false): string {
   const historyInstructions = useHistory ? `
-HISTÓRICO DE CONVERSAS:
-- Chame get_conversation_history(days=7) no início para entender o contexto
-- Use o histórico para uma saudação personalizada se houver conversas anteriores
-- Seja natural, não mencione que está "buscando dados"
+HISTORICO DE CONVERSAS:
+- Chame get_conversation_history(days=7) no inicio para entender o contexto
+- Use o historico para uma saudacao personalizada se houver conversas anteriores
+- Seja natural, nao mencione que esta "buscando dados"
 
-PADRÕES PARA FUNCTIONS DE HISTÓRICO:
-- Histórico genérico → 30 dias
-- "Última conversa" → 1 dia
-- NÃO pergunte qual período - use os padrões acima` : '';
+PADROES PARA FUNCTIONS DE HISTORICO:
+- Historico generico -> 30 dias
+- "Ultima conversa" -> 1 dia
+- Nao pergunte qual periodo; use os padroes acima` : '';
 
   return `${baseInstruction}
 
-CAPACIDADES AVANÇADAS:
+CAPACIDADES AVANCADAS:
 1. Busca na web em tempo real (Google Search)
-2. Acesso a páginas web específicas (fetch_page)${useHistory ? '\n3. Acesso a histórico de conversas (functions)' : ''}
+2. Leitura direta de paginas web por URL (fetch_page)${useHistory ? '\n3. Acesso a historico de conversas (functions)' : ''}
 
 BUSCA NA WEB (Google Search):
-- Se o usuário perguntar sobre notícias, eventos atuais, preços, clima, ou qualquer informação que possa mudar com o tempo, USE A BUSCA
-- NÃO invente informações - se não tiver certeza, busque
-- Quando usar a busca, diga brevemente "deixa eu verificar isso..." ou algo natural
+- Se o usuario perguntar sobre noticias, eventos atuais, precos, clima, ou qualquer informacao que possa mudar com o tempo, use a busca
+- Nao invente informacoes; se nao tiver certeza, busque
+- Quando usar a busca, diga brevemente "deixa eu verificar isso..."
 - Cite as fontes quando relevante
 
-ACESSO A PÁGINAS WEB (fetch_page):
-- Quando pedirem para VER, LER, ACESSAR ou ANALISAR um site/página específica:
-  1. PLANEJE: diga ao usuário o que vai fazer ("Vou acessar [site] para [objetivo]. Um momento...")
-  2. Execute a função e apresente o resultado de forma organizada
-- Para pedidos genéricos ("pesquisa sobre React"), use Google Search. Use fetch_page apenas para URLs específicas.
-- Use mode "links" para blogs/sites com múltiplos posts ("veja os posts do site")
-- Use mode "full" para ler uma página específica
-- Use mode "specific" + query para buscar dado pontual (preço, email, data)
-- Resuma o conteúdo de forma conversacional - NÃO leia HTML bruto
-- Se conteúdo for truncado, ofereça buscar parte específica com mode "specific"${historyInstructions}`;
+LEITURA DE URL (fetch_page):
+- Se o usuario disser "acesse", "abra", "leia este site/link", use fetch_page(url)
+- Use fetch_page apenas quando houver URL explicita ou pedido claro para abrir pagina
+- Se fetch_page falhar, explique o erro de forma curta e tente Google Search como alternativa${historyInstructions}`;
 }
 
 interface UseLiveAPIResult {
@@ -98,11 +103,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
-  const sessionPromiseRef = useRef<Promise<any> | null>(null);
-  const resolvedSessionRef = useRef<any>(null);
+  const sessionPromiseRef = useRef<Promise<Session> | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Analyser for visualization
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -120,38 +123,28 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
+  const isConnectedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
-  const isAudioSendingRef = useRef(false);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
   const disconnect = useCallback(() => {
-    console.log('[LiveAPI] disconnect() called');
-    isAudioSendingRef.current = false;
-
     if (audioWorkletNodeRef.current) {
-      try { audioWorkletNodeRef.current.disconnect(); } catch (e) { }
+      audioWorkletNodeRef.current.disconnect();
       audioWorkletNodeRef.current = null;
     }
     if (inputSourceRef.current) {
-      try { inputSourceRef.current.disconnect(); } catch (e) { }
+      inputSourceRef.current.disconnect();
       inputSourceRef.current = null;
     }
-
-    // [Android Fix] Stop media stream tracks to release microphone
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
     if (inputAudioContextRef.current) {
-      try { inputAudioContextRef.current.close(); } catch (e) { }
+      inputAudioContextRef.current.close();
       inputAudioContextRef.current = null;
     }
     if (outputAudioContextRef.current) {
-      try { outputAudioContextRef.current.close(); } catch (e) { }
+      outputAudioContextRef.current.close();
       outputAudioContextRef.current = null;
     }
 
@@ -165,14 +158,15 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     audioQueueRef.current = [];
     isProcessingQueueRef.current = false;
 
-    // Close the Gemini session
-    if (resolvedSessionRef.current) {
-      try { resolvedSessionRef.current.close(); } catch (e) { }
-      resolvedSessionRef.current = null;
+    if (sessionPromiseRef.current) {
+      sessionPromiseRef.current.then(session => {
+        try { session.close(); } catch (e) { }
+      });
+      sessionPromiseRef.current = null;
     }
-    sessionPromiseRef.current = null;
 
     setConnected(false);
+    isConnectedRef.current = false;
     setIsConnecting(false);
     setVolume(0);
     setIsMuted(false);
@@ -211,12 +205,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         let audioBuffer = await decodeAudioData(
           base64ToUint8Array(base64Audio),
           ctx,
-          24000,
+          AUDIO_CONFIG.OUTPUT_SAMPLE_RATE,
           1
         );
 
         // Resample to system's native sample rate if different
-        if (ctx.sampleRate !== 24000) {
+        if (ctx.sampleRate !== AUDIO_CONFIG.OUTPUT_SAMPLE_RATE) {
           audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
         }
 
@@ -243,9 +237,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   const connect = useCallback(async (config: LiveConfig) => {
     try {
-      setIsConnecting(true);
+      setIsConnecting(true); // Start loading
       setCurrentConfig(config);
-      console.log('[LiveAPI] === CONNECTION START ===');
 
       // Prioritize user-configured API key over environment variable
       const apiKey = config.apiKey || process.env.API_KEY;
@@ -255,128 +248,38 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       const ai = new GoogleGenAI({ apiKey });
 
-      // ====== STEP 1: Get microphone FIRST (requires user gesture) ======
-      console.log('[LiveAPI] Step 1: Requesting microphone...');
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          }
-        });
-        streamRef.current = stream;
-        console.log('[LiveAPI] Step 1: Microphone OK, tracks:', stream.getAudioTracks().length);
-      } catch (micError) {
-        console.error('[LiveAPI] Microphone access failed:', micError);
-        throw new Error(`Microphone access denied: ${(micError as Error).message}`);
+      const AudioContextClass = window.AudioContext || (window as WebkitWindow).webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error('AudioContext not supported in this browser');
       }
-
-      // ====== STEP 2: Create and resume AudioContexts ======
-      console.log('[LiveAPI] Step 2: Creating AudioContexts...');
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
 
-      // Always resume - safe to call even if already running
-      await inputAudioContextRef.current.resume();
-      await outputAudioContextRef.current.resume();
-      console.log('[LiveAPI] Step 2: AudioContext states - input:', inputAudioContextRef.current.state, 'output:', outputAudioContextRef.current.state);
-
-      // [Android Fix] Listen for AudioContext being suspended (e.g. app goes to background)
-      inputAudioContextRef.current.onstatechange = () => {
-        console.log('[LiveAPI] Input AudioContext state changed to:', inputAudioContextRef.current?.state);
-        if (inputAudioContextRef.current?.state === 'suspended') {
-          inputAudioContextRef.current.resume().catch(() => { });
-        }
-      };
-      outputAudioContextRef.current.onstatechange = () => {
-        console.log('[LiveAPI] Output AudioContext state changed to:', outputAudioContextRef.current?.state);
-        if (outputAudioContextRef.current?.state === 'suspended') {
-          outputAudioContextRef.current.resume().catch(() => { });
-        }
-      };
-
-      // ====== STEP 3: Register AudioWorklet with fallback ======
-      console.log('[LiveAPI] Step 3: Registering AudioWorklet...');
-      let useWorklet = true;
+      // Register AudioWorklet
       const blob = new Blob([workletCode], { type: 'application/javascript' });
       const workletUrl = URL.createObjectURL(blob);
-      try {
-        await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
-        console.log('[LiveAPI] Step 3: AudioWorklet OK');
-      } catch (workletError) {
-        console.warn('[LiveAPI] Step 3: AudioWorklet failed, will use ScriptProcessor fallback:', workletError);
-        useWorklet = false;
-      } finally {
-        URL.revokeObjectURL(workletUrl);
-      }
+      await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
 
-      // ====== STEP 4: Setup audio pipeline (BEFORE WebSocket) ======
-      console.log('[LiveAPI] Step 4: Setting up audio pipeline...');
-
-      // Input Analyser
+      // Setup Input Analyser
       inputAnalyserRef.current = inputAudioContextRef.current.createAnalyser();
-      inputAnalyserRef.current.fftSize = 256;
-      inputAnalyserRef.current.smoothingTimeConstant = 0.5;
+      inputAnalyserRef.current.fftSize = AUDIO_CONFIG.FFT_SIZE;
+      inputAnalyserRef.current.smoothingTimeConstant = AUDIO_CONFIG.SMOOTHING;
 
-      // Output Analyser
+      // Setup Output Analyser
       outputAnalyserRef.current = outputAudioContextRef.current.createAnalyser();
-      outputAnalyserRef.current.fftSize = 256;
-      outputAnalyserRef.current.smoothingTimeConstant = 0.5;
+      outputAnalyserRef.current.fftSize = AUDIO_CONFIG.FFT_SIZE;
+      outputAnalyserRef.current.smoothingTimeConstant = AUDIO_CONFIG.SMOOTHING;
 
       const outputNode = outputAudioContextRef.current.createGain();
-      outputGainNodeRef.current = outputNode;
-      outputNode.connect(outputAnalyserRef.current);
+      outputGainNodeRef.current = outputNode; // Store reference for speaker control
+      outputNode.connect(outputAnalyserRef.current); // Connect through analyser
       outputAnalyserRef.current.connect(outputAudioContextRef.current.destination);
-
-      // Create input source from microphone
-      inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
-      if (inputAnalyserRef.current) {
-        inputSourceRef.current.connect(inputAnalyserRef.current);
-      }
-
-      // Setup audio send function (will be activated in onopen)
-      const sendAudioData = (inputData: Float32Array) => {
-        if (isMutedRef.current || !isAudioSendingRef.current) return;
-        const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
-        const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
-        const session = resolvedSessionRef.current;
-        if (session) {
-          try {
-            session.sendRealtimeInput({ media: pcmBlob });
-          } catch (e) {
-            console.error('[LiveAPI] Error sending audio:', e);
-          }
-        }
-      };
-
-      // Connect audio processing node
-      if (useWorklet) {
-        audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
-        audioWorkletNodeRef.current.port.onmessage = (event) => {
-          sendAudioData(event.data as Float32Array);
-        };
-        inputSourceRef.current.connect(audioWorkletNodeRef.current);
-        audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination);
-        console.log('[LiveAPI] Step 4: Audio pipeline OK (AudioWorklet)');
-      } else {
-        const bufferSize = 2048;
-        const scriptNode = (inputAudioContextRef.current as any).createScriptProcessor(bufferSize, 1, 1);
-        scriptNode.onaudioprocess = (event: AudioProcessingEvent) => {
-          const inputData = event.inputBuffer.getChannelData(0);
-          sendAudioData(new Float32Array(inputData));
-        };
-        inputSourceRef.current.connect(scriptNode);
-        scriptNode.connect(inputAudioContextRef.current.destination);
-        audioWorkletNodeRef.current = scriptNode;
-        console.log('[LiveAPI] Step 4: Audio pipeline OK (ScriptProcessor fallback)');
-      }
 
       nextStartTimeRef.current = 0;
       setTranscript('');
       currentSpeakerRef.current = null;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       // Build tools array based on config
       const tools: any[] = [];
@@ -400,6 +303,24 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   }
                 },
                 required: ['days']
+              }
+            },
+            {
+              name: 'fetch_page',
+              description: 'Acessa uma URL e retorna texto resumido da pagina. Use quando o usuario pedir para abrir ou ler um site/link especifico.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  url: {
+                    type: 'string',
+                    description: 'URL da pagina a ser lida (http ou https).'
+                  },
+                  maxChars: {
+                    type: 'number',
+                    description: 'Limite maximo de caracteres no retorno (500 a 30000).'
+                  }
+                },
+                required: ['url']
               }
             },
             // TEMPORARILY DISABLED - save_emotional_note
@@ -477,66 +398,67 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 },
                 required: ['period']
               }
-            },
-            {
-              name: 'fetch_page',
-              description: 'Acessa e analisa o conteúdo de uma página web por URL. Use para ler sites, listar posts/artigos, ou buscar dados específicos. REGRA: sempre explique ao usuário o que vai acessar antes de chamar.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  url: {
-                    type: 'string',
-                    description: 'URL completa da página (ex: https://example.com)'
-                  },
-                  mode: {
-                    type: 'string',
-                    description: 'full=texto completo da página, links=lista de links/posts do site, specific=busca dado pontual',
-                    enum: ['full', 'links', 'specific']
-                  },
-                  query: {
-                    type: 'string',
-                    description: 'Só para mode specific: o que buscar (ex: preço, email, autor, data)'
-                  }
-                },
-                required: ['url', 'mode']
-              }
             }
           ]
         });
       }
 
-      // ====== STEP 5: Connect WebSocket session (audio pipeline is already ready!) ======
-      console.log('[LiveAPI] Step 5: Connecting WebSocket session...');
-
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
           onopen: () => {
-            console.log('[LiveAPI] ✅ Session OPENED - enabling audio sending');
-            // Audio pipeline is already set up, just enable sending
-            isAudioSendingRef.current = true;
+            console.log("Live Session Opened");
             setConnected(true);
-            setIsConnecting(false);
+            isConnectedRef.current = true;
+            setIsConnecting(false); // Stop loading
 
-            // Ensure AudioContexts are still running
-            if (inputAudioContextRef.current?.state === 'suspended') {
-              inputAudioContextRef.current.resume();
+            if (!inputAudioContextRef.current) return;
+
+            inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
+            // Connect input to analyser for visualization
+            if (inputAnalyserRef.current) {
+              inputSourceRef.current.connect(inputAnalyserRef.current);
             }
-            if (outputAudioContextRef.current?.state === 'suspended') {
-              outputAudioContextRef.current.resume();
-            }
+
+            // Replace ScriptProcessor with AudioWorklet
+            audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+
+            // Throttled audio sender to prevent overwhelming the API
+            const throttledSendAudio = throttle((inputData: Float32Array) => {
+              // Don't send if disconnected or muted
+              if (!isConnectedRef.current || isMutedRef.current) {
+                return;
+              }
+
+              // Pass the native sample rate for automatic resampling to 16kHz
+              const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
+              const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
+              sessionPromise.then(session => {
+                if (isConnectedRef.current) {
+                  session.sendRealtimeInput({ media: pcmBlob });
+                }
+              });
+            }, AUDIO_CONFIG.THROTTLE_MS);
+
+            audioWorkletNodeRef.current.port.onmessage = (event) => {
+              const inputData = event.data as Float32Array;
+              throttledSendAudio(inputData);
+            };
+
+            inputSourceRef.current.connect(audioWorkletNodeRef.current);
+            audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
           },
           onmessage: async (message: LiveServerMessage) => {
             // Debug: Log all incoming messages to see Google Search grounding data
             const msgAny = message as any;
             if (msgAny.groundingMetadata) {
-              console.log('🔍 Google Search grounding:', msgAny.groundingMetadata);
+              console.log('[Search] Google grounding:', msgAny.groundingMetadata);
             }
             if (msgAny.serverContent?.groundingMetadata) {
-              console.log('🔍 Google Search grounding (serverContent):', msgAny.serverContent.groundingMetadata);
+              console.log('[Search] Google grounding (serverContent):', msgAny.serverContent.groundingMetadata);
             }
             // Uncomment below to see ALL messages:
-            // console.log('📨 Live message:', message);
+            // console.log('[Live] message:', message);
 
             // Handle Input Transcription (User)
             if (message.serverContent?.inputTranscription) {
@@ -588,10 +510,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             // Handle Tool Calls (Function Calling)
-            const toolCall = (message as any).toolCall;
-            if (toolCall && config.enableAdvancedFeatures) {
-              console.log('🔧 Tool call received:', toolCall);
-              for (const functionCall of toolCall.functionCalls || []) {
+            const toolCallMessage = (message as unknown as { toolCall?: ToolCallMessage }).toolCall;
+            if (toolCallMessage && config.enableAdvancedFeatures) {
+              console.log('[Tool] call received:', toolCallMessage);
+              const functionCalls: FunctionCall[] = toolCallMessage.functionCalls || [];
+              
+              for (const functionCall of functionCalls) {
                 try {
                   const result = await handleToolCall({
                     name: functionCall.name,
@@ -600,27 +524,18 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
                   // Send tool response back to Gemini
                   sessionPromise.then(session => {
-                    const toolResponse = {
-                      functionResponses: [{
-                        id: functionCall.id,
-                        name: functionCall.name,
-                        response: result
-                      }]
+                    const responseItem: FunctionResponseItem = {
+                      id: functionCall.id,
+                      name: functionCall.name,
+                      response: result as Record<string, unknown> | undefined
                     };
 
-                    console.log('📤 Sending tool response:', toolResponse);
+                    console.log('[Tool] sending response:', responseItem);
 
-                    // Try different methods based on SDK version
-                    if (typeof (session as any).sendToolResponse === 'function') {
-                      (session as any).sendToolResponse(toolResponse);
-                    } else if (typeof (session as any).send === 'function') {
-                      // Alternative: send as client content
-                      (session as any).send({ toolResponse });
-                    } else if (typeof (session as any).sendClientContent === 'function') {
-                      (session as any).sendClientContent({ toolResponse });
-                    } else {
-                      console.warn('⚠️ No valid method to send tool response. Available methods:', Object.keys(session));
-                    }
+                    // Use SDK's sendToolResponse method
+                    session.sendToolResponse({
+                      functionResponses: [responseItem]
+                    });
                   }).catch(err => {
                     console.error('Error sending tool response:', err);
                   });
@@ -630,16 +545,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
           },
-          onclose: (event: any) => {
-            const details = event ? `Code: ${event.code}, Reason: ${event.reason || 'none'}` : 'No event details';
-            console.warn('[LiveAPI] ❌ Session CLOSED.', details);
-            console.warn('[LiveAPI] AudioContext states at close - input:', inputAudioContextRef.current?.state, 'output:', outputAudioContextRef.current?.state);
-            console.warn('[LiveAPI] Was audio sending?', isAudioSendingRef.current);
-            console.warn('[LiveAPI] Stream tracks active?', streamRef.current?.getAudioTracks().map(t => ({ enabled: t.enabled, readyState: t.readyState })));
+          onclose: () => {
+            console.log("Live Session Closed");
             disconnect();
           },
-          onerror: (err: any) => {
-            console.error('[LiveAPI] ❌ Session ERROR:', err);
+          onerror: (err) => {
+            console.error("Live Session Error", err);
             disconnect();
           }
         },
@@ -657,25 +568,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         }
       });
 
-      // Wait for session to actually resolve and store it
       sessionPromiseRef.current = sessionPromise;
-      const resolvedSession = await sessionPromise;
-      resolvedSessionRef.current = resolvedSession;
-      console.log('[LiveAPI] Step 5: Session promise resolved successfully');
 
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('[LiveAPI] ❌ CONNECTION FAILED:', errMsg);
-      console.error('[LiveAPI] Full error:', error);
-      console.error('[LiveAPI] Debug info:', {
-        inputCtxState: inputAudioContextRef.current?.state,
-        outputCtxState: outputAudioContextRef.current?.state,
-        streamActive: streamRef.current?.active,
-        streamTracks: streamRef.current?.getAudioTracks().map(t => t.readyState),
-      });
+      console.error("Connection failed", error);
       disconnect();
     }
-  }, [disconnect, processAudioQueue]);
+  }, [disconnect]);
 
   const getAnalyser = () => {
     return {
