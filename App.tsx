@@ -1,10 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { ScreenName, HistoryItem } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { UsageScreen } from './components/UsageScreen';
-import { SettingsScreen, SettingsDetailScreen } from './components/SettingsScreen';
-import { HistoryScreen } from './components/HistoryScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SkeletonLoader } from './components/LoadingStates/SkeletonLoader';
+
+// Lazy load secondary screens for better initial bundle size
+const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
+const SettingsDetailScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsDetailScreen })));
+const HistoryScreen = lazy(() => import('./components/HistoryScreen').then(m => ({ default: m.HistoryScreen })));
 
 import { useLiveAPI } from './hooks/useLiveAPI';
 import { useI18n } from './i18n';
@@ -76,7 +80,7 @@ const App: React.FC = () => {
     }
   };
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, volume, transcript, getAnalysers } = useLiveAPI();
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, getAnalysers } = useLiveAPI();
 
   const handleNavigate = (screen: ScreenName) => {
     setCurrentScreen(screen);
@@ -162,55 +166,56 @@ const App: React.FC = () => {
             {currentScreen === ScreenName.USAGE && (
               <UsageScreen
                 onEndCall={handleEndCall}
-                onSettings={() => handleNavigate(ScreenName.SETTINGS)}
                 isMuted={isMuted}
                 toggleMute={toggleMute}
                 isSpeakerOn={isSpeakerOn}
                 toggleSpeaker={toggleSpeaker}
-                volume={volume}
                 caption={transcript}
                 getAnalysers={getAnalysers}
               />
             )}
 
-            {currentScreen === ScreenName.SETTINGS && (
-              <SettingsScreen
-                onBack={() => handleNavigate(connected ? ScreenName.USAGE : ScreenName.HOME)}
-                onNavigate={handleNavigate}
-                currentVoice={voiceName}
-              />
-            )}
-
-            {currentScreen === ScreenName.HISTORY && (
-              <HistoryScreen
-                history={history}
-                onBack={() => handleNavigate(ScreenName.SETTINGS)}
-                onDelete={deleteHistoryItem}
-              />
-            )}
-
-            {/* Render Sub-screens */}
-            {[
-              ScreenName.ACCOUNT,
-              ScreenName.NOTIFICATIONS,
-              ScreenName.PRIVACY,
-              ScreenName.HELP,
-              ScreenName.ABOUT,
-              ScreenName.VOICE,
-              ScreenName.INSTRUCTIONS,
-              ScreenName.LANGUAGE
-            ].includes(currentScreen) && (
-                <SettingsDetailScreen
-                  screen={currentScreen}
-                  onBack={() => handleNavigate(ScreenName.SETTINGS)}
-                  voiceName={voiceName}
-                  setVoiceName={setVoiceName}
-                  systemInstruction={systemInstruction}
-                  setSystemInstruction={setSystemInstruction}
-                  apiKey={apiKey}
-                  setApiKey={handleApiKeyChange}
+            {/* Lazy loaded screens with Suspense */}
+            <Suspense fallback={<SkeletonLoader />}>
+              {currentScreen === ScreenName.SETTINGS && (
+                <SettingsScreen
+                  onBack={() => handleNavigate(connected ? ScreenName.USAGE : ScreenName.HOME)}
+                  onNavigate={handleNavigate}
+                  currentVoice={voiceName}
                 />
               )}
+
+              {currentScreen === ScreenName.HISTORY && (
+                <HistoryScreen
+                  history={history}
+                  onBack={() => handleNavigate(ScreenName.SETTINGS)}
+                  onDelete={deleteHistoryItem}
+                />
+              )}
+
+              {/* Render Sub-screens */}
+              {[
+                ScreenName.ACCOUNT,
+                ScreenName.NOTIFICATIONS,
+                ScreenName.PRIVACY,
+                ScreenName.HELP,
+                ScreenName.ABOUT,
+                ScreenName.VOICE,
+                ScreenName.INSTRUCTIONS,
+                ScreenName.LANGUAGE
+              ].includes(currentScreen) && (
+                  <SettingsDetailScreen
+                    screen={currentScreen}
+                    onBack={() => handleNavigate(ScreenName.SETTINGS)}
+                    voiceName={voiceName}
+                    setVoiceName={setVoiceName}
+                    systemInstruction={systemInstruction}
+                    setSystemInstruction={setSystemInstruction}
+                    apiKey={apiKey}
+                    setApiKey={handleApiKeyChange}
+                  />
+                )}
+            </Suspense>
           </div>
         </div>
       </div>

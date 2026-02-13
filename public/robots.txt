@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Oi, robozinho. Sim, isso eh um easter egg.
+# Se voce chegou ate aqui, desbloqueou +10 de crawler charisma.
+# Humanos curiosos: https://livego.dev/chat
+
+# Areas secretas (ou nao):
+Disallow: /area-51/
+Disallow: /segredo-do-chef/
+Disallow: /cofre-do-emoji/
+
+Sitemap: https://livego.dev/sitemap.xml

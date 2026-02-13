@@ -78,3 +78,29 @@ export interface TimePattern {
     dominantEmotion: EmotionType;
   }>;
 }
+
+// Tool Call Types for Gemini Live API
+export interface FunctionCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface ToolCallMessage {
+  functionCalls?: FunctionCall[];
+}
+
+export interface FunctionResponseItem {
+  id: string;
+  name: string;
+  response: Record<string, unknown> | undefined;
+}
+
+export interface ToolResponsePayload {
+  functionResponses: FunctionResponseItem[];
+}
+
+// Audio Context with webkit fallback
+export interface WebkitWindow extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}

@@ -7,6 +7,244 @@ import { EmotionalNote, ConversationEntry, EmotionStatistics, TimePattern, Emoti
 
 const EMOTIONAL_NOTES_KEY = 'livego_emotional_notes';
 const CONVERSATION_HISTORY_KEY = 'livego_history';
+const FETCH_PAGE_TIMEOUT_MS = 9000;
+const FETCH_PAGE_MAX_CHARS = 12000;
+
+type FetchPageResult = {
+    ok: boolean;
+    url: string;
+    finalUrl?: string;
+    source?: 'direct' | 'proxy';
+    title?: string;
+    contentPreview?: string;
+    contentChars?: number;
+    truncated?: boolean;
+    error?: string;
+    errorCode?: string;
+    details?: string[];
+};
+
+function fetchWithTimeout(
+    url: string,
+    init: RequestInit = {},
+    timeoutMs: number = FETCH_PAGE_TIMEOUT_MS
+): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    return fetch(url, {
+        ...init,
+        signal: controller.signal
+    }).finally(() => clearTimeout(timeoutId));
+}
+
+function normalizeUrl(input: string): string | null {
+    const trimmed = String(input || '').trim();
+    if (!trimmed) return null;
+
+    const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+        return parsed.toString();
+    } catch {
+        return null;
+    }
+}
+
+function isBlockedHost(hostname: string): boolean {
+    const host = hostname.toLowerCase();
+    if (
+        host === 'localhost' ||
+        host === '::1' ||
+        host === '0.0.0.0' ||
+        host.endsWith('.local')
+    ) {
+        return true;
+    }
+
+    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipv4Match) return false;
+
+    const a = Number(ipv4Match[1]);
+    const b = Number(ipv4Match[2]);
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+}
+
+function cleanTextContent(raw: string): string {
+    return raw
+        .replace(/\r/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+}
+
+function parseHtmlToText(html: string): { title: string; text: string } {
+    const fallback = {
+        title: '',
+        text: cleanTextContent(html.replace(/<[^>]*>/g, ' '))
+    };
+
+    if (typeof DOMParser === 'undefined') return fallback;
+
+    try {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const title = cleanTextContent(doc.title || '');
+
+        doc.querySelectorAll('script,style,noscript,template,svg').forEach(node => node.remove());
+        const bodyText = cleanTextContent(doc.body?.textContent || '');
+
+        return { title, text: bodyText };
+    } catch {
+        return fallback;
+    }
+}
+
+/**
+ * Fetches and summarizes a page content for the assistant.
+ * Uses direct fetch first and falls back to a readability proxy when CORS blocks.
+ */
+export async function fetchPage(
+    url: string,
+    maxChars: number = FETCH_PAGE_MAX_CHARS
+): Promise<FetchPageResult> {
+    const normalizedUrl = normalizeUrl(url);
+    if (!normalizedUrl) {
+        return {
+            ok: false,
+            url: String(url || ''),
+            errorCode: 'INVALID_URL',
+            error: 'URL invalida. Use um link http(s) completo.'
+        };
+    }
+
+    try {
+        const parsed = new URL(normalizedUrl);
+        if (isBlockedHost(parsed.hostname)) {
+            return {
+                ok: false,
+                url: normalizedUrl,
+                errorCode: 'BLOCKED_HOST',
+                error: 'Host local/rede privada nao permitido.'
+            };
+        }
+    } catch {
+        return {
+            ok: false,
+            url: normalizedUrl,
+            errorCode: 'INVALID_URL',
+            error: 'Falha ao interpretar URL.'
+        };
+    }
+
+    const cappedMaxChars = Math.min(Math.max(500, Number(maxChars) || FETCH_PAGE_MAX_CHARS), 30000);
+    const directErrors: string[] = [];
+
+    try {
+        const response = await fetchWithTimeout(normalizedUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1'
+            },
+            cache: 'no-store'
+        });
+
+        if (!response.ok) {
+            directErrors.push(`Direct HTTP ${response.status}`);
+            throw new Error(`Direct HTTP ${response.status}`);
+        }
+
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        const raw = await response.text();
+
+        const { title, text } = contentType.includes('text/html')
+            ? parseHtmlToText(raw)
+            : { title: '', text: cleanTextContent(raw) };
+
+        if (!text) {
+            return {
+                ok: false,
+                url: normalizedUrl,
+                source: 'direct',
+                errorCode: 'EMPTY_CONTENT',
+                error: 'Pagina carregada, mas sem conteudo textual legivel.'
+            };
+        }
+
+        const preview = text.slice(0, cappedMaxChars);
+        return {
+            ok: true,
+            url: normalizedUrl,
+            finalUrl: response.url || normalizedUrl,
+            source: 'direct',
+            title,
+            contentPreview: preview,
+            contentChars: text.length,
+            truncated: text.length > cappedMaxChars
+        };
+    } catch (directError) {
+        directErrors.push(
+            directError instanceof Error ? directError.message : String(directError)
+        );
+    }
+
+    // Fallback for CORS/opaque failures in static frontends: fetch readable text via proxy.
+    const proxyUrl = `https://r.jina.ai/http://${normalizedUrl.replace(/^https?:\/\//i, '')}`;
+    try {
+        const proxyResponse = await fetchWithTimeout(proxyUrl, {
+            method: 'GET',
+            headers: { Accept: 'text/plain,text/markdown;q=0.9,*/*;q=0.1' },
+            cache: 'no-store'
+        });
+
+        if (!proxyResponse.ok) {
+            return {
+                ok: false,
+                url: normalizedUrl,
+                errorCode: 'FETCH_FAILED',
+                error: `Falha ao buscar pagina (proxy HTTP ${proxyResponse.status}).`,
+                details: directErrors
+            };
+        }
+
+        const raw = await proxyResponse.text();
+        const text = cleanTextContent(raw);
+        if (!text) {
+            return {
+                ok: false,
+                url: normalizedUrl,
+                source: 'proxy',
+                errorCode: 'EMPTY_CONTENT',
+                error: 'Proxy retornou sem conteudo.'
+            };
+        }
+
+        const preview = text.slice(0, cappedMaxChars);
+        return {
+            ok: true,
+            url: normalizedUrl,
+            source: 'proxy',
+            title: '',
+            contentPreview: preview,
+            contentChars: text.length,
+            truncated: text.length > cappedMaxChars
+        };
+    } catch (proxyError) {
+        const proxyMessage = proxyError instanceof Error ? proxyError.message : String(proxyError);
+        return {
+            ok: false,
+            url: normalizedUrl,
+            errorCode: 'FETCH_FAILED',
+            error: 'Nao foi possivel ler a pagina.',
+            details: [...directErrors, proxyMessage]
+        };
+    }
+}
 
 // Helper: Get mode (most frequent) of an array
 function mode(arr: string[]): EmotionType {
@@ -68,7 +306,7 @@ function parseHistoryToEntries(): ConversationEntry[] {
         if (!saved) return [];
 
         const history = JSON.parse(saved);
-        console.log('📜 Raw history from localStorage:', history);
+        console.log('[History] Raw history from localStorage:', history);
 
         const entries = history.map((item: any) => ({
             id: item.id,
@@ -79,7 +317,7 @@ function parseHistoryToEntries(): ConversationEntry[] {
             intensity: item.intensity || 5
         }));
 
-        console.log('📜 Parsed entries:', entries);
+        console.log('[History] Parsed entries:', entries);
         return entries;
     } catch (error) {
         console.error('Failed to parse history:', error);
@@ -327,239 +565,42 @@ export async function getEmotionStatistics(period: string): Promise<EmotionStati
     }
 }
 
-// ============================================================
-// Web Fetch Functions
-// ============================================================
-
-const CORS_PROXIES = [
-    (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-];
-
-/**
- * Fetch with timeout using AbortController (compatible with all browsers)
- */
-async function fetchWithTimeout(url: string, timeoutMs: number = 12000): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const resp = await fetch(url, { signal: controller.signal });
-        return resp;
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
-
-/**
- * Strip HTML tags and clean up text content
- */
-function stripHtml(html: string): string {
-    // Remove scripts, styles, SVG, nav, header, footer
-    let text = html
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-        .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-        .replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
-
-    // Convert structural tags to newlines
-    text = text.replace(/<br\s*\/?>/gi, '\n');
-    text = text.replace(/<\/(p|div|li|h[1-6]|tr|blockquote|article|section)>/gi, '\n');
-    text = text.replace(/<li[^>]*>/gi, '• ');
-    text = text.replace(/<h([1-6])[^>]*>/gi, '\n## ');
-
-    // Remove all remaining tags
-    text = text.replace(/<[^>]+>/g, ' ');
-
-    // Decode HTML entities
-    text = text
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&mdash;/g, '—')
-        .replace(/&ndash;/g, '–')
-        .replace(/&#\d+;/g, '');
-
-    // Clean whitespace
-    text = text.replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
-
-    return text;
-}
-
-/**
- * Extract links from HTML
- */
-function extractLinks(html: string, baseUrl: string): Array<{ title: string; url: string }> {
-    const links: Array<{ title: string; url: string }> = [];
-    const regex = /<a[^>]+href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-    let match;
-
-    while ((match = regex.exec(html)) !== null) {
-        const href = match[1];
-        const title = match[2].replace(/<[^>]+>/g, '').trim();
-        if (title && href && !href.startsWith('javascript:') && title.length > 3) {
-            try {
-                const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).href;
-                links.push({ title: title.substring(0, 120), url: fullUrl });
-            } catch {
-                // Invalid URL, skip
-            }
-        }
-    }
-
-    // Deduplicate by URL
-    const unique = [...new Map(links.map(l => [l.url, l])).values()];
-    return unique.slice(0, 30);
-}
-
-/**
- * Fetch and analyze a web page
- * Modes: 'full' (complete text), 'links' (extract links), 'specific' (search for query)
- */
-export async function fetchPage(
-    url: string,
-    mode: string = 'full',
-    query?: string
-): Promise<any> {
-    console.log(`🌐 fetch_page: ${url} (mode: ${mode}, query: ${query || 'none'})`);
-
-    try {
-        // Normalize URL
-        if (!url.startsWith('http')) url = 'https://' + url;
-
-        // Fetch using CORS proxies (direct fetch always fails due to CORS in browser)
-        let html: string = '';
-        let fetchSuccess = false;
-
-        for (let i = 0; i < CORS_PROXIES.length; i++) {
-            const proxyFn = CORS_PROXIES[i];
-            if (!proxyFn) continue;
-            const proxyUrl = proxyFn(url);
-            try {
-                console.log(`🌐 Trying proxy ${i + 1}/${CORS_PROXIES.length}...`);
-                const resp = await fetchWithTimeout(proxyUrl, 12000);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                html = await resp.text();
-                console.log(`🌐 Proxy ${i + 1} OK, got ${html.length} chars`);
-                fetchSuccess = true;
-                break;
-            } catch (proxyError) {
-                console.warn(`🌐 Proxy ${i + 1} failed:`, proxyError);
-            }
-        }
-
-        if (!fetchSuccess) {
-            throw new Error('Todos os proxies falharam. O site pode estar fora do ar ou bloqueando acesso.');
-        }
-
-        // Extract title
-        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        const pageTitle = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : 'Sem título';
-
-        // MODE: links - return list of links/posts
-        if (mode === 'links') {
-            const links = extractLinks(html, url);
-            return {
-                url,
-                title: pageTitle,
-                totalLinks: links.length,
-                links: links,
-                hint: 'Apresente os links como lista organizada. Pergunte ao usuário qual quer ler em detalhe.'
-            };
-        }
-
-        // Extract clean text
-        const fullText = stripHtml(html);
-
-        // MODE: specific - search for specific data
-        if (mode === 'specific' && query) {
-            const queryLower = query.toLowerCase();
-            const lines = fullText.split('\n').filter(l =>
-                l.toLowerCase().includes(queryLower)
-            );
-            return {
-                url,
-                title: pageTitle,
-                query,
-                found: lines.length,
-                matches: lines.slice(0, 10).map(l => l.trim().substring(0, 300)),
-                context: fullText.substring(0, 2000),
-                hint: 'Apresente os matches encontrados de forma organizada. Se não encontrou, sugira buscar com outro termo.'
-            };
-        }
-
-        // MODE: full - complete text (with token economy)
-        const MAX_CONTENT = 6000;
-        const truncated = fullText.length > MAX_CONTENT;
-        const content = truncated
-            ? fullText.substring(0, MAX_CONTENT) + '\n\n[... conteúdo truncado ...]'
-            : fullText;
-
-        return {
-            url,
-            title: pageTitle,
-            contentLength: fullText.length,
-            truncated,
-            content,
-            hint: truncated
-                ? 'O conteúdo foi resumido. Analise e apresente os pontos principais. Se o usuário precisar de mais detalhes, use mode "specific" com uma query.'
-                : 'Analise e apresente o conteúdo de forma conversacional e organizada.'
-        };
-
-    } catch (error) {
-        console.error('🌐 fetch_page error:', error);
-        return {
-            url,
-            error: `Não foi possível acessar: ${(error as Error).message}`,
-            hint: 'Informe ao usuário que o site pode estar bloqueando acesso, fora do ar, ou exigir login. Sugira tentar outra URL.'
-        };
-    }
-}
-
-// ============================================================
-// Tool Call Handler
-// ============================================================
-
 /**
  * Handle tool calls from Gemini
  */
 export async function handleToolCall(call: { name: string; args: any }): Promise<any> {
-    console.log(`🔧 Function chamada: ${call.name}`, call.args);
+    console.log(`[Tool] Function called: ${call.name}`, call.args);
+    const args = call.args || {};
 
     switch (call.name) {
         case 'get_conversation_history':
             return await getConversationHistory(
-                call.args.days || 7,
-                call.args.emotionFilter || 'all'
+                args.days || 7,
+                args.emotionFilter || 'all'
             );
 
         case 'save_emotional_note':
-            return await saveEmotionalNote(call.args);
+            return await saveEmotionalNote(args);
 
         case 'get_time_patterns':
-            return await getTimePatterns(call.args.analysisType || 'hourly');
+            return await getTimePatterns(args.analysisType || 'hourly');
 
         case 'search_conversation_topic':
             return await searchConversationTopic(
-                call.args.topic,
-                call.args.limit || 5
+                args.topic,
+                args.limit || 5
             );
 
         case 'get_emotion_statistics':
-            return await getEmotionStatistics(call.args.period || 'week');
+            return await getEmotionStatistics(args.period || 'week');
 
         case 'fetch_page':
             return await fetchPage(
-                call.args.url,
-                call.args.mode || 'full',
-                call.args.query
+                String(args.url || ''),
+                Number(args.maxChars || FETCH_PAGE_MAX_CHARS)
             );
 
         default:
-            return { error: `Função ${call.name} não implementada` };
+            return { error: `Function ${call.name} not implemented` };
     }
 }

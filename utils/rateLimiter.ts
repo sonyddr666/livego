@@ -36,7 +36,7 @@ export function useRateLimiter(options: RateLimiterOptions = { maxCalls: 10, win
 /**
  * Debounce function for rate limiting
  */
-export function debounce<T extends (...args: unknown[]) => unknown>(
+export function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
     fn: T,
     delay: number
 ): (...args: Parameters<T>) => void {
@@ -51,7 +51,7 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
 /**
  * Throttle function for rate limiting
  */
-export function throttle<T extends (...args: unknown[]) => unknown>(
+export function throttle<T extends (...args: Parameters<T>) => ReturnType<T>>(
     fn: T,
     limit: number
 ): (...args: Parameters<T>) => void {

@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LIVEGO - Voice AI Chat</title>
+    <link rel="canonical" href="https://livego.dev/">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -16,6 +17,27 @@
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#4f46e5">
     <meta name="description" content="LIVEGO - Real-time voice AI conversations powered by Gemini">
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+    <meta name="author" content="LiveGo">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="LIVEGO">
+    <meta property="og:title" content="LIVEGO - Voice AI Chat">
+    <meta property="og:description" content="Real-time voice AI conversations powered by Gemini.">
+    <meta property="og:url" content="https://livego.dev/">
+    <meta property="og:image" content="https://livego.dev/icons/icon-512.png">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LIVEGO - Voice AI Chat">
+    <meta name="twitter:description" content="Real-time voice AI conversations powered by Gemini.">
+    <meta name="twitter:image" content="https://livego.dev/icons/icon-512.png">
+
+    <!-- Language alternates -->
+    <link rel="alternate" hreflang="x-default" href="https://livego.dev/">
+    <link rel="alternate" hreflang="en" href="https://livego.dev/">
+    <link rel="alternate" hreflang="pt-BR" href="https://livego.dev/">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="LiveGo">
@@ -253,12 +275,48 @@
 
 <body>
     <div id="root"></div>
+    <script>
+        window.__LIVEGO_SW_ENABLED_HOSTS__ = ['livego.dev', 'www.livego.dev'];
+        window.__LIVEGO_SHOULD_ENABLE_SW__ =
+            window.location.protocol === 'https:' &&
+            window.__LIVEGO_SW_ENABLED_HOSTS__.includes(window.location.hostname);
+
+        // Keep Vite boot simple. In local/dev, just detach old SW in background.
+        if ('serviceWorker' in navigator && !window.__LIVEGO_SHOULD_ENABLE_SW__) {
+            window.addEventListener('load', async () => {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(registrations.map(reg => reg.unregister()));
+
+                    if ('caches' in window) {
+                        const keys = await caches.keys();
+                        await Promise.all(
+                            keys
+                                .filter(key => key.startsWith('livego'))
+                                .map(key => caches.delete(key))
+                        );
+                    }
+
+                    if (navigator.serviceWorker.controller && !sessionStorage.getItem('sw_detach_once')) {
+                        sessionStorage.setItem('sw_detach_once', '1');
+                        window.location.reload();
+                        return;
+                    }
+                    sessionStorage.removeItem('sw_detach_once');
+                } catch (error) {
+                    console.log('SW cleanup failed:', error);
+                }
+            });
+        }
+    </script>
     <script type="module" src="/index.tsx"></script>
 
     <!-- Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
+                if (!window.__LIVEGO_SHOULD_ENABLE_SW__) return;
+
                 navigator.serviceWorker.register('/sw.js')
                     .then(registration => {
                         console.log('SW registered:', registration.scope);
