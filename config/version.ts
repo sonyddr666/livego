@@ -1,3 +1,4 @@
 // Single source of truth for app version
 // Update this value and it will reflect everywhere in the app
-export const APP_VERSION = '1.0.26';
+export const APP_VERSION = '1.0.1';
+export const BUILD_TAG = '(ERROR TESTE)';

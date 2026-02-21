@@ -591,7 +591,7 @@ export async function ghostSearch(args: {
     console.log('[Ghost-Search] URL:', GHOST_SEARCH_URL);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), GHOST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort("Nova busca iniciada ou limite de tempo excedido"), GHOST_TIMEOUT_MS);
 
     try {
         const response = await fetch(GHOST_SEARCH_URL, {

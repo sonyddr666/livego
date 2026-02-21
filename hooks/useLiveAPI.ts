@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
-import { calculateRMSVolume } from '../utils/audioEnhancement';
+import { calculateRMSVolume, createEnhancementChain } from '../utils/audioEnhancement';
 import { useSettingsStore } from '../store/settingsStore';
 
 // Audio constants
@@ -135,6 +135,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
   const isConnectedRef = useRef(false);
+  const isProcessingToolRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
 
   useEffect(() => {
@@ -289,24 +290,26 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       }
 
       // Check if AudioWorklet is supported (requires HTTPS or localhost)
+      let useWorklet = true;
       if (!inputAudioContextRef.current.audioWorklet) {
-        const errorMsg = 'Your browser blocked AudioWorklet. This usually happens when accessing via an insecure HTTP IP address instead of localhost or HTTPS. Please use localhost or a secure tunnel to test audio.';
-        console.error('[DEBUG]', errorMsg);
-        throw new Error(errorMsg);
+        console.warn('[DEBUG] AudioWorklet is blocked (likely due to accessing via insecure HTTP IP address). Falling back to ScriptProcessor...');
+        useWorklet = false;
       }
 
-      // Register AudioWorklet
-      console.log('[DEBUG] Creating AudioWorklet blob...');
-      const blob = new Blob([workletCode], { type: 'application/javascript' });
-      const workletUrl = URL.createObjectURL(blob);
-      console.log('[DEBUG] AudioWorklet blob URL created:', workletUrl.substring(0, 50) + '...');
+      // Register AudioWorklet if available
+      if (useWorklet) {
+        console.log('[DEBUG] Creating AudioWorklet blob...');
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(blob);
+        console.log('[DEBUG] AudioWorklet blob URL created:', workletUrl.substring(0, 50) + '...');
 
-      try {
-        await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
-        console.log('[DEBUG] AudioWorklet module added successfully');
-      } catch (workletError) {
-        console.error('[DEBUG] AudioWorklet registration FAILED:', workletError);
-        throw workletError;
+        try {
+          await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
+          console.log('[DEBUG] AudioWorklet module added successfully');
+        } catch (workletError) {
+          console.warn('[DEBUG] AudioWorklet registration FAILED, falling back to ScriptProcessor:', workletError);
+          useWorklet = false;
+        }
       }
 
       // Setup Input Analyser
@@ -512,38 +515,43 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
             console.log("[DEBUG] Creating MediaStreamSource...");
             inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
-            // Connect input to analyser for visualization
+
+            // Connect input to analyser for visualization (raw input)
             if (inputAnalyserRef.current) {
               inputSourceRef.current.connect(inputAnalyserRef.current);
             }
 
-            // Replace ScriptProcessor with AudioWorklet
-            console.log("[DEBUG] Creating AudioWorkletNode 'pcm-processor'...");
-            try {
-              audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
-              console.log("[DEBUG] AudioWorkletNode created successfully");
-            } catch (workletNodeError) {
-              console.error("[DEBUG] AudioWorkletNode creation FAILED:", workletNodeError);
-              return;
-            }
+            // Create Audio Enhancement Chain
+            // This cleans up the microphone audio (removes rumbling, compression, noise gate)
+            // so Gemini can understand speech much better.
+
+            console.log("[DEBUG] Applying Audio Enhancements (Noise Gate + EQ + Compression)...");
+            const enhancedChain = createEnhancementChain(inputAudioContextRef.current);
+            inputSourceRef.current.connect(enhancedChain.input);
+
+            // Fallback variable for ScriptProcessor
+            let scriptProcessorNode: ScriptProcessorNode | null = null;
 
             // Send audio continuously, but drop pure silence/noise to prevent API overwhelm
             const sendAudioChunk = (inputData: Float32Array) => {
-              // Don't send if disconnected or muted
-              if (!isConnectedRef.current || isMutedRef.current) {
+              if (!isConnectedRef.current) {
                 return;
               }
 
-              // Drop silent chunks to avoid keeping the AI endlessly listening to background noise
-              // RMS 0.01 is a reasonable threshold for speech vs silence
+              // CRITICAL: We cannot simply `return;` here, because skipping chunks corrupts the
+              // PCM timeline and makes the audio sound scrambled to Gemini. 
+              // Instead, we zero out the data to send pure digital silence.
+              let dataToSend = inputData;
               const rms = calculateRMSVolume(inputData);
-              if (rms < 0.01) {
-                return;
+
+              // Send silence if muted, processing a tool, or background noise is low
+              if (isMutedRef.current || isProcessingToolRef.current || rms < 0.008) {
+                dataToSend = new Float32Array(inputData.length); // Pure silence
               }
 
               // Pass the native sample rate for automatic resampling to 16kHz
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
-              const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
+              const pcmBlob = createPcmBlob(dataToSend, nativeSampleRate);
               sessionPromise.then((session: any) => {
                 if (isConnectedRef.current) {
                   session.sendRealtimeInput({ media: pcmBlob });
@@ -551,14 +559,47 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               });
             };
 
-            audioWorkletNodeRef.current.port.onmessage = (event: MessageEvent) => {
-              const inputData = event.data as Float32Array;
-              sendAudioChunk(inputData);
-            };
+            // Check if we registered AudioWorklet successfully earlier
+            const hasWorklet = !!inputAudioContextRef.current.audioWorklet;
 
-            inputSourceRef.current.connect(audioWorkletNodeRef.current);
-            audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
-            console.log("[DEBUG] Audio pipeline connected successfully");
+            if (hasWorklet) {
+              console.log("[DEBUG] Creating AudioWorkletNode 'pcm-processor'...");
+              try {
+                audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+                console.log("[DEBUG] AudioWorkletNode created successfully");
+
+                audioWorkletNodeRef.current.port.onmessage = (event: MessageEvent) => {
+                  const inputData = event.data as Float32Array;
+                  sendAudioChunk(inputData);
+                };
+
+                // Connect the ENHANCED audio (clean, no static) to the processor that sends data to Gemini
+                enhancedChain.output.connect(audioWorkletNodeRef.current);
+                audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive
+                console.log("[DEBUG] Audio pipeline connected successfully via AudioWorklet");
+              } catch (workletNodeError) {
+                console.error("[DEBUG] AudioWorkletNode creation FAILED:", workletNodeError);
+                return; // Can't proceed
+              }
+            } else {
+              console.log("[DEBUG] Using ScriptProcessorNode fallback for insecure contexts...");
+              // Use ScriptProcessorNode (deprecated but works everywhere for local network/HTTP testing)
+              const bufferSize = AUDIO_CONFIG.BUFFER_SIZE || 2048;
+              scriptProcessorNode = inputAudioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
+
+              scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => {
+                const inputBuffer = audioProcessingEvent.inputBuffer;
+                const inputData = inputBuffer.getChannelData(0);
+                // Copy data to avoid mutating the original buffer
+                const pcmData = new Float32Array(inputData);
+                sendAudioChunk(pcmData);
+              };
+
+              // Connect the ENHANCED audio to the ScriptProcessor
+              enhancedChain.output.connect(scriptProcessorNode);
+              scriptProcessorNode.connect(inputAudioContextRef.current.destination);
+              console.log("[DEBUG] Audio pipeline connected successfully via ScriptProcessorNode");
+            }
           },
           onmessage: async (message: LiveServerMessage) => {
             // Debug: Log all incoming messages to see Google Search grounding data
@@ -624,35 +665,56 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             // Handle Tool Calls (Function Calling)
             const toolCallMessage = (message as unknown as { toolCall?: ToolCallMessage }).toolCall;
             if (toolCallMessage && config.enableAdvancedFeatures) {
-              console.log('[Tool] call received:', toolCallMessage);
-              const functionCalls: FunctionCall[] = toolCallMessage.functionCalls || [];
+              // Handle Tool Calls (Google Search, Ghost Search, Functions)
+              if (message.toolCall) {
+                const functionCalls = message.toolCall.functionCalls;
+                if (functionCalls && functionCalls.length > 0) {
+                  console.log('[Tool] call received:', message.toolCall);
 
-              for (const functionCall of functionCalls) {
-                try {
-                  const result = await handleToolCall({
-                    name: functionCall.name,
-                    args: functionCall.args
-                  });
+                  // Mute microphone so the user doesn't interrupt the API while it's processing
+                  isProcessingToolRef.current = true;
 
-                  // Send tool response back to Gemini
-                  sessionPromise.then(session => {
-                    const responseItem: FunctionResponseItem = {
-                      id: functionCall.id,
-                      name: functionCall.name,
-                      response: result as Record<string, unknown> | undefined
-                    };
+                  (async () => {
+                    try {
+                      const functionResponses: FunctionResponseItem[] = [];
 
-                    console.log('[Tool] sending response:', responseItem);
+                      for (const call of functionCalls) {
+                        console.log('[Tool] Function called:', call.name, call.args);
 
-                    // Use SDK's sendToolResponse method
-                    session.sendToolResponse({
-                      functionResponses: [responseItem]
-                    });
-                  }).catch(err => {
-                    console.error('Error sending tool response:', err);
-                  });
-                } catch (error) {
-                  console.error('Tool call error:', error);
+                        // Implement audible TTS feedback when a search starts
+                        if (call.name === 'ghost_search' || call.name === 'googleSearch') {
+                          try {
+                            const utterance = new SpeechSynthesisUtterance("Um momento, pesquisando...");
+                            utterance.lang = "pt-BR";
+                            utterance.rate = 1.3;
+                            window.speechSynthesis.speak(utterance);
+                          } catch (e) {
+                            console.warn("[DEBUG] Could not play TTS feedback", e);
+                          }
+                        }
+
+                        // Handle the actual function execution
+                        const result = await handleToolCall(call as FunctionCall);
+                        functionResponses.push({
+                          id: call.id || '',
+                          name: call.name || '',
+                          response: result
+                        });
+                      }
+
+                      if (isConnectedRef.current && sessionPromiseRef.current) {
+                        console.log('[Tool] sending response:', functionResponses[0]);
+                        const session = await sessionPromiseRef.current;
+                        session.sendToolResponse({
+                          functionResponses: functionResponses
+                        });
+                      }
+                    } catch (error) {
+                      console.error('[Tool] execution error:', error);
+                    } finally {
+                      isProcessingToolRef.current = false; // Restore microphone
+                    }
+                  })();
                 }
               }
             }
