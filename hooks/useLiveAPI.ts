@@ -4,6 +4,7 @@ import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
 import { throttle } from '../utils/rateLimiter';
+import { useSettingsStore } from '../store/settingsStore';
 
 // Audio constants
 const AUDIO_CONFIG = {
@@ -62,13 +63,23 @@ PADROES PARA FUNCTIONS DE HISTORICO:
 
 CAPACIDADES AVANCADAS:
 1. Busca na web em tempo real (Google Search)
-2. Leitura direta de paginas web por URL (fetch_page)${useHistory ? '\n3. Acesso a historico de conversas (functions)' : ''}
+2. Leitura direta de paginas web por URL (fetch_page)
+3. Pesquisa avancada Ghost-Search (ghost_search) - papers, YouTube, Reddit, calculos${useHistory ? '\n4. Acesso a historico de conversas (functions)' : ''}
 
 BUSCA NA WEB (Google Search):
-- Se o usuario perguntar sobre noticias, eventos atuais, precos, clima, ou qualquer informacao que possa mudar com o tempo, use a busca
-- Nao invente informacoes; se nao tiver certeza, busque
+- Use para buscas rapidas e simples: noticias, clima, precos, fatos
 - Quando usar a busca, diga brevemente "deixa eu verificar isso..."
 - Cite as fontes quando relevante
+
+GHOST-SEARCH (ghost_search):
+- Use para pesquisas mais profundas e especializadas
+- Use focus="academic" para papers e artigos cientificos
+- Use focus="youtube" para buscar tutoriais e videos
+- Use focus="reddit" para opinioes e discussoes
+- Use focus="wolfram" para calculos matematicos
+- Use model="deep_research" para analises completas
+- Quando o usuario pedir pesquisa profunda, analise detalhada, ou mencionar "ghost search", use ghost_search
+- Resuma a resposta de forma natural, nao leia o texto inteiro
 
 LEITURA DE URL (fetch_page):
 - Se o usuario disser "acesse", "abra", "leia este site/link", use fetch_page(url)
@@ -322,12 +333,15 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         throw micError;
       }
 
-      // Build tools array based on config
+      // Build tools array based on config and search mode
+      const searchMode = useSettingsStore.getState().searchMode;
       const tools: any[] = [];
 
       if (config.enableAdvancedFeatures) {
-        // Google Search - allows Gemini to search the web for current information
-        tools.push({ googleSearch: {} });
+        // Search tool: Google Search or Ghost-Search based on user preference
+        if (searchMode === 'google') {
+          tools.push({ googleSearch: {} });
+        }
 
         // Function Calling - allows Gemini to access user data
         tools.push({
@@ -438,6 +452,35 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   }
                 },
                 required: ['period']
+              }
+            },
+            {
+              name: 'ghost_search',
+              description: 'Pesquisa avançada via Ghost-Search. Suporta múltiplos modelos de IA, buscas acadêmicas, YouTube, Reddit e cálculos. Use para pesquisas profundas ou especializadas.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: {
+                    type: 'string',
+                    description: 'Pergunta ou termo de busca'
+                  },
+                  model: {
+                    type: 'string',
+                    description: 'Modelo de IA para a busca',
+                    enum: ['best', 'sonar', 'deep_research', 'gpt_5_2', 'claude_4_5_sonnet', 'gemini_3_flash']
+                  },
+                  focus: {
+                    type: 'string',
+                    description: 'Tipo de busca especializada',
+                    enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram']
+                  },
+                  time_range: {
+                    type: 'string',
+                    description: 'Filtro temporal dos resultados',
+                    enum: ['all', 'day', 'week', 'month', 'year']
+                  }
+                },
+                required: ['query']
               }
             }
           ]
@@ -569,7 +612,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             if (toolCallMessage && config.enableAdvancedFeatures) {
               console.log('[Tool] call received:', toolCallMessage);
               const functionCalls: FunctionCall[] = toolCallMessage.functionCalls || [];
-              
+
               for (const functionCall of functionCalls) {
                 try {
                   const result = await handleToolCall({

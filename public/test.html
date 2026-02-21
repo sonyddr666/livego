@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveGo — Modo Teste (Texto)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #13131a;
+            --surface-2: #1a1a24;
+            --border: #2a2a3a;
+            --text: #e4e4ec;
+            --text-dim: #8888a0;
+            --accent: #7c5cfc;
+            --accent-glow: rgba(124, 92, 252, 0.25);
+            --success: #34d399;
+            --error: #f87171;
+            --user-bg: rgba(124, 92, 252, 0.12);
+            --gemini-bg: rgba(52, 211, 153, 0.08);
+            --radius: 12px;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .connect-btn {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .connect-btn.off {
+            background: linear-gradient(135deg, #7c5cfc, #6347d6);
+            color: white;
+        }
+
+        .connect-btn.on {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--error);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+        }
+
+        .connect-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Config Bar */
+        .config-bar {
+            display: flex;
+            gap: 10px;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-2);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .config-bar label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .config-bar input,
+        .config-bar select {
+            padding: 6px 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.8rem;
+            transition: border-color 0.2s;
+        }
+
+        .config-bar input:focus,
+        .config-bar select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .api-key-input {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toggle-row input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 16px;
+            height: 16px;
+        }
+
+        .toggle-row span {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+        }
+
+        /* Chat Area */
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .chat-area::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-area::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .msg {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            white-space: pre-wrap;
+            word-break: break-word;
+            animation: fadeIn 0.25s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .msg.user {
+            align-self: flex-end;
+            background: var(--user-bg);
+            border: 1px solid rgba(124, 92, 252, 0.2);
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg.gemini {
+            align-self: flex-start;
+            background: var(--gemini-bg);
+            border: 1px solid rgba(52, 211, 153, 0.15);
+            border-bottom-left-radius: 4px;
+        }
+
+        .msg.system {
+            align-self: center;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            border-radius: 8px;
+            padding: 8px 14px;
+            text-align: center;
+        }
+
+        .msg .label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .msg.user .label {
+            color: #a78bfa;
+        }
+
+        .msg.gemini .label {
+            color: var(--success);
+        }
+
+        .tool-call {
+            font-size: 0.78rem;
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+        }
+
+        .tool-call summary {
+            cursor: pointer;
+            color: #a78bfa;
+            font-weight: 500;
+        }
+
+        .tool-call pre {
+            margin-top: 6px;
+            font-size: 0.72rem;
+            white-space: pre-wrap;
+        }
+
+        /* Input Bar */
+        .input-bar {
+            display: flex;
+            gap: 10px;
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+
+        .input-bar textarea {
+            flex: 1;
+            padding: 10px 14px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.88rem;
+            resize: none;
+            min-height: 42px;
+            max-height: 120px;
+            transition: border-color 0.2s;
+        }
+
+        .input-bar textarea::placeholder {
+            color: var(--text-dim);
+        }
+
+        .input-bar textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .send-btn {
+            padding: 10px 18px;
+            background: linear-gradient(135deg, #7c5cfc, #6347d6);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: transform 0.15s;
+            align-self: flex-end;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 500px) {
+            .config-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .api-key-input {
+                min-width: unset;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>⚡ LiveGo — Modo Teste</h1>
+        <div class="header-actions">
+            <div class="status-dot" id="statusDot"></div>
+            <button class="connect-btn off" id="connectBtn" onclick="toggleConnection()">Conectar</button>
+        </div>
+    </div>
+
+    <!-- Config -->
+    <div class="config-bar">
+        <div style="flex:1; min-width:200px;">
+            <label>API Key</label><br>
+            <input type="password" id="apiKey" class="api-key-input" placeholder="Cole sua Gemini API Key...">
+        </div>
+        <div>
+            <label>Tools</label><br>
+            <select id="toolsMode">
+                <option value="all">Google Search + Ghost-Search + Functions</option>
+                <option value="search_only">Apenas Google Search</option>
+                <option value="ghost_only">Apenas Ghost-Search</option>
+                <option value="none">Sem tools</option>
+            </select>
+        </div>
+        <div class="toggle-row">
+            <input type="checkbox" id="playAudio">
+            <span>Tocar áudio</span>
+        </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat-area" id="chat">
+        <div class="msg system">
+            Conecte para conversar com o Gemini Live por texto.<br>
+            Input: texto · Output: áudio (transcrito como texto aqui)<br>
+            Mesma API Key do app.
+        </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-bar">
+        <textarea id="userInput" placeholder="Digite sua mensagem... (Ctrl+Enter para enviar)" rows="1"
+            disabled></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>Enviar</button>
+    </div>
+
+    <!-- SDK -->
+    <script type="module">
+        import { GoogleGenAI, Modality } from 'https://esm.run/@google/genai';
+
+        const $ = id => document.getElementById(id);
+        let session = null;
+        let currentGeminiMsg = null;
+        let audioCtx = null;
+        let nextStartTime = 0;
+
+        // Detect file:// protocol — tools won't work
+        const isFileProtocol = location.protocol === 'file:';
+        if (isFileProtocol) {
+            const warning = document.createElement('div');
+            warning.style.cssText = 'background:#2d1515;border:1px solid #f87171;color:#fca5a5;padding:14px 20px;text-align:center;font-size:0.85rem;font-weight:500;';
+            warning.innerHTML = `
+                ⚠️ <strong>Aberto via file://</strong> — Tools (Ghost-Search, fetch_page) não funcionam assim.<br>
+                Rode <code style="background:#1a1a24;padding:2px 6px;border-radius:4px;">npm run dev</code> e acesse
+                <a href="http://localhost:3000/test.html" style="color:#7c5cfc;font-weight:600;">http://localhost:3000/test.html</a>
+            `;
+            document.body.insertBefore(warning, document.body.children[1]);
+        }
+
+        // Ghost-Search URL: use proxy on dev server, direct URL otherwise
+        function getGhostSearchUrl() {
+            if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+                return '/api/ghost/search'; // Vite proxy
+            }
+            return 'https://api.ghost1.cloud/search'; // Direct (needs CORS)
+        }
+
+        // Load API key from localStorage (same key the app uses)
+        try {
+            const savedKey = localStorage.getItem('gemini_api_key') || '';
+            $('apiKey').value = savedKey;
+        } catch (e) { /* file:// may block localStorage */ }
+
+        // Ctrl+Enter to send
+        $('userInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Auto-resize textarea
+        $('userInput').addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // --- Audio playback for PCM 24kHz ---
+        function base64ToUint8Array(base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes;
+        }
+
+        function playAudioChunk(base64Audio) {
+            if (!$('playAudio').checked || !audioCtx) return;
+
+            try {
+                const pcmData = base64ToUint8Array(base64Audio);
+                const float32 = new Float32Array(pcmData.length / 2);
+                const view = new DataView(pcmData.buffer);
+                for (let i = 0; i < float32.length; i++) {
+                    float32[i] = view.getInt16(i * 2, true) / 32768;
+                }
+
+                const sampleRate = 24000;
+                const audioBuffer = audioCtx.createBuffer(1, float32.length, sampleRate);
+                audioBuffer.getChannelData(0).set(float32);
+
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+
+                nextStartTime = Math.max(nextStartTime, audioCtx.currentTime);
+                source.start(nextStartTime);
+                nextStartTime += audioBuffer.duration;
+            } catch (err) {
+                console.error('Audio playback error:', err);
+            }
+        }
+
+        // --- Connection ---
+        window.toggleConnection = async function () {
+            if (session) {
+                try { session.close(); } catch (e) { }
+                session = null;
+                if (audioCtx) { audioCtx.close(); audioCtx = null; }
+                setConnected(false);
+                addSystemMsg('Desconectado.');
+                return;
+            }
+
+            const apiKey = $('apiKey').value.trim();
+            if (!apiKey) {
+                addSystemMsg('⚠️ Cole sua API Key primeiro.');
+                return;
+            }
+
+            addSystemMsg('Conectando ao Gemini Live...');
+
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+
+                // Init audio context for optional playback
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                nextStartTime = 0;
+
+                // Build tools based on selection
+                const tools = buildTools();
+
+                // CONFIG: AUDIO modality only (required for native audio model)
+                // Text comes via outputAudioTranscription
+                const config = {
+                    responseModalities: [Modality.AUDIO],
+                    outputAudioTranscription: {},
+                    inputAudioTranscription: {},
+                    systemInstruction: buildSystemInstruction(),
+                    speechConfig: {
+                        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } }
+                    },
+                    ...(tools.length > 0 && { tools })
+                };
+
+                session = await ai.live.connect({
+                    model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+                    config,
+                    callbacks: {
+                        onopen: () => {
+                            setConnected(true);
+                            addSystemMsg('✅ Conectado! Digite suas mensagens abaixo.');
+                        },
+                        onmessage: (message) => handleMessage(message),
+                        onclose: () => {
+                            setConnected(false);
+                            session = null;
+                            addSystemMsg('Conexão encerrada.');
+                        },
+                        onerror: (err) => {
+                            console.error('Session error:', err);
+                            addSystemMsg('❌ Erro: ' + (err.message || JSON.stringify(err)));
+                            setConnected(false);
+                            session = null;
+                        }
+                    }
+                });
+
+            } catch (err) {
+                console.error('Connection failed:', err);
+                addSystemMsg('❌ Falha ao conectar: ' + err.message);
+                session = null;
+                setConnected(false);
+            }
+        };
+
+        function buildTools() {
+            const mode = $('toolsMode').value;
+            const tools = [];
+
+            if (mode === 'all' || mode === 'search_only') {
+                tools.push({ googleSearch: {} });
+            }
+
+            const declarations = [];
+
+            if (mode === 'all' || mode === 'ghost_only') {
+                declarations.push({
+                    name: 'ghost_search',
+                    description: 'Pesquisa avançada via Ghost-Search. Suporta múltiplos modelos de IA, buscas acadêmicas, YouTube, Reddit e cálculos.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            query: { type: 'string', description: 'Pergunta ou termo de busca' },
+                            model: { type: 'string', description: 'Modelo de IA', enum: ['best', 'sonar', 'deep_research'] },
+                            focus: { type: 'string', description: 'Tipo de busca', enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram'] },
+                            time_range: { type: 'string', description: 'Filtro temporal', enum: ['all', 'day', 'week', 'month', 'year'] }
+                        },
+                        required: ['query']
+                    }
+                });
+            }
+
+            if (mode === 'all') {
+                declarations.push({
+                    name: 'fetch_page',
+                    description: 'Lê o conteúdo de uma URL e retorna o texto.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', description: 'URL da página' },
+                            maxChars: { type: 'number', description: 'Limite de caracteres' }
+                        },
+                        required: ['url']
+                    }
+                });
+            }
+
+            if (declarations.length > 0) {
+                tools.push({ functionDeclarations: declarations });
+            }
+
+            return tools;
+        }
+
+        function buildSystemInstruction() {
+            return `Você é um assistente inteligente. Responda em português brasileiro de forma clara e útil.
+Se precisar buscar informações atualizadas, use as ferramentas disponíveis.
+Para pesquisas profundas ou especializadas (acadêmico, YouTube, Reddit, cálculos), use ghost_search.
+Para buscas rápidas sobre notícias, clima, fatos, use Google Search.
+Para ler uma URL específica, use fetch_page.`;
+        }
+
+        // --- Handle incoming messages ---
+        function handleMessage(message) {
+            const sc = message.serverContent;
+
+            // Audio data — optionally play it
+            const audioPart = sc?.modelTurn?.parts?.find(p => p.inlineData);
+            if (audioPart?.inlineData?.data) {
+                playAudioChunk(audioPart.inlineData.data);
+            }
+
+            // Input transcription (what user typed/said, echoed back)
+            if (sc?.inputTranscription?.text) {
+                // We already show user messages, skip echo
+            }
+
+            // Output transcription — THIS is the text we display
+            if (sc?.outputTranscription?.text) {
+                const text = sc.outputTranscription.text;
+                if (!currentGeminiMsg) {
+                    currentGeminiMsg = addGeminiMsg('');
+                }
+                const contentEl = currentGeminiMsg.querySelector('.content');
+                contentEl.textContent += text;
+                scrollToBottom();
+            }
+
+            // Turn complete — finalize current message
+            if (sc?.turnComplete) {
+                currentGeminiMsg = null;
+            }
+
+            // Handle tool calls
+            const toolCall = message.toolCall;
+            if (toolCall && toolCall.functionCalls) {
+                for (const fc of toolCall.functionCalls) {
+                    console.log('[Tool] Call:', fc.name, fc.args);
+
+                    // Show tool call in chat
+                    const toolMsg = addSystemMsg(`🔧 Chamando tool: ${fc.name}...`);
+
+                    // Execute tool
+                    executeToolCall(fc.name, fc.args || {}).then(result => {
+                        // Update tool message
+                        toolMsg.innerHTML = `🔧 <strong>${fc.name}</strong> — ${result.ok !== false ? '✅ OK' : '❌ Erro'}`;
+
+                        // Add expandable details
+                        const details = document.createElement('details');
+                        details.className = 'tool-call';
+                        details.innerHTML = `<summary>Ver detalhes</summary><pre>${JSON.stringify({ args: fc.args, result }, null, 2)}</pre>`;
+                        toolMsg.appendChild(details);
+
+                        // Send response back to Gemini
+                        try {
+                            session.sendToolResponse({
+                                functionResponses: [{
+                                    id: fc.id,
+                                    name: fc.name,
+                                    response: result
+                                }]
+                            });
+                        } catch (err) {
+                            console.error('Error sending tool response:', err);
+                        }
+                    });
+                }
+            }
+        }
+
+        async function executeToolCall(name, args) {
+            if (name === 'ghost_search') {
+                try {
+                    const res = await fetch(getGhostSearchUrl(), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            query: args.query,
+                            model: args.model || 'best',
+                            focus: args.focus || 'web',
+                            time_range: args.time_range || 'all',
+                            citation_mode: 'clean',
+                            user_id: 'livego_test'
+                        })
+                    });
+                    const data = await res.json();
+                    return {
+                        ok: data.status === 'success',
+                        answer: data.answer || '',
+                        model_used: data.model_used,
+                        citations: (data.citations || []).slice(0, 5)
+                    };
+                } catch (err) {
+                    return { ok: false, error: err.message };
+                }
+            }
+
+            if (name === 'fetch_page') {
+                try {
+                    const res = await fetch(args.url);
+                    const html = await res.text();
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    doc.querySelectorAll('script,style,noscript,template,svg').forEach(n => n.remove());
+                    const text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim();
+                    const maxChars = args.maxChars || 12000;
+                    return {
+                        ok: true,
+                        title: doc.title || '',
+                        contentPreview: text.slice(0, maxChars),
+                        truncated: text.length > maxChars
+                    };
+                } catch (err) {
+                    return { ok: false, error: err.message };
+                }
+            }
+
+            return { error: `Function ${name} not implemented` };
+        }
+
+        // --- Send text message ---
+        window.sendMessage = function () {
+            if (!session) return;
+
+            const text = $('userInput').value.trim();
+            if (!text) return;
+
+            // Add user message to chat
+            addUserMsg(text);
+            $('userInput').value = '';
+            $('userInput').style.height = 'auto';
+
+            // Send text to Gemini Live via sendClientContent
+            try {
+                session.sendClientContent({
+                    turns: [{ role: 'user', parts: [{ text }] }],
+                    turnComplete: true
+                });
+            } catch (err) {
+                addSystemMsg('❌ Erro ao enviar: ' + err.message);
+            }
+        };
+
+        // --- UI Helpers ---
+        function setConnected(connected) {
+            $('statusDot').className = 'status-dot' + (connected ? ' connected' : '');
+            $('connectBtn').className = 'connect-btn ' + (connected ? 'on' : 'off');
+            $('connectBtn').textContent = connected ? 'Desconectar' : 'Conectar';
+            $('userInput').disabled = !connected;
+            $('sendBtn').disabled = !connected;
+            if (connected) $('userInput').focus();
+        }
+
+        function addUserMsg(text) {
+            const div = document.createElement('div');
+            div.className = 'msg user';
+            div.innerHTML = `<span class="label">Você</span><span class="content"></span>`;
+            div.querySelector('.content').textContent = text;
+            $('chat').appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        function addGeminiMsg(text) {
+            const div = document.createElement('div');
+            div.className = 'msg gemini';
+            div.innerHTML = `<span class="label">Gemini</span><span class="content"></span>`;
+            div.querySelector('.content').textContent = text;
+            $('chat').appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        function addSystemMsg(text) {
+            const div = document.createElement('div');
+            div.className = 'msg system';
+            div.innerHTML = text;
+            $('chat').appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        function scrollToBottom() {
+            const chat = $('chat');
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+
+</html>

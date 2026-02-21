@@ -265,6 +265,8 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
     const currentLanguageLabel = t(`language.name.${locale}` as TranslationKey);
     const { theme, setTheme } = useThemeStore();
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const { searchMode, toggleSearchMode } = useSettingsStore();
+    const isGhost = searchMode === 'ghost';
 
     return (
         <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
@@ -292,8 +294,50 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                         label={t('settings.item.systemInstructions')}
                         color="bg-pink-500"
                         onClick={() => onNavigate(ScreenName.INSTRUCTIONS)}
-                        isLast
                     />
+                    {/* Search Mode Toggle */}
+                    <button
+                        type="button"
+                        onClick={toggleSearchMode}
+                        className="w-full flex items-center justify-between p-4 text-left hover:bg-theme-hover active:bg-theme-active transition-colors"
+                    >
+                        <div className="flex flex-col">
+                            <span className="text-theme-primary font-medium">Modo de Busca</span>
+                            <span className="text-xs text-theme-secondary">
+                                {isGhost ? '👻 Ghost-Search ativo' : '🔍 Google Search ativo'}
+                            </span>
+                        </div>
+                        <div
+                            className="flex items-center rounded-full overflow-hidden border transition-all duration-300"
+                            style={{
+                                borderColor: isGhost ? 'rgba(168, 85, 247, 0.5)' : 'rgba(34, 197, 94, 0.5)',
+                                boxShadow: isGhost
+                                    ? '0 0 12px rgba(168, 85, 247, 0.25)'
+                                    : '0 0 12px rgba(34, 197, 94, 0.25)',
+                            }}
+                        >
+                            <span
+                                className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-300"
+                                style={{
+                                    color: !isGhost ? '#fff' : 'rgba(136,136,160,0.6)',
+                                    background: !isGhost ? '#22c55e' : 'transparent',
+                                }}
+                            >
+                                Google
+                            </span>
+                            <span
+                                className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-300"
+                                style={{
+                                    color: isGhost ? '#fff' : 'rgba(136,136,160,0.6)',
+                                    background: isGhost
+                                        ? 'linear-gradient(135deg, #a855f7, #dc2626)'
+                                        : 'transparent',
+                                }}
+                            >
+                                Ghost
+                            </span>
+                        </div>
+                    </button>
                 </SettingsGroup>
 
                 <SettingsGroup title={t('settings.section.general')}>

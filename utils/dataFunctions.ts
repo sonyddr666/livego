@@ -566,6 +566,77 @@ export async function getEmotionStatistics(period: string): Promise<EmotionStati
 }
 
 /**
+ * Ghost-Search: pesquisa avançada via api.ghost1.cloud
+ */
+export async function ghostSearch(args: {
+    query: string;
+    model?: string;
+    focus?: string;
+    time_range?: string;
+}): Promise<any> {
+    const GHOST_SEARCH_URL = '/api/ghost/search';
+    const GHOST_TIMEOUT_MS = 30000; // deep_research pode demorar
+
+    const body: Record<string, string> = {
+        query: args.query,
+        model: args.model || 'best',
+        focus: args.focus || 'web',
+        time_range: args.time_range || 'all',
+        citation_mode: 'clean',
+        user_id: 'livego_app'
+    };
+
+    console.log('[Ghost-Search] Requesting:', body);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GHOST_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(GHOST_SEARCH_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            return {
+                ok: false,
+                error: `Ghost-Search HTTP ${response.status}`,
+                query: args.query
+            };
+        }
+
+        const data = await response.json();
+        console.log('[Ghost-Search] Response:', data.status, data.model_used);
+
+        return {
+            ok: data.status === 'success',
+            answer: data.answer || '',
+            model_used: data.model_used || body.model,
+            focus_mode: data.focus_mode || body.focus,
+            citations: (data.citations || []).slice(0, 5).map((c: any) => ({
+                title: c.title,
+                url: c.url
+            })),
+            has_thinking: data.has_thinking || false,
+            thinking: data.thinking || ''
+        };
+    } catch (error) {
+        clearTimeout(timeoutId);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('[Ghost-Search] Error:', msg);
+        return {
+            ok: false,
+            error: msg.includes('abort') ? 'Timeout na busca Ghost-Search' : msg,
+            query: args.query
+        };
+    }
+}
+
+/**
  * Handle tool calls from Gemini
  */
 export async function handleToolCall(call: { name: string; args: any }): Promise<any> {
@@ -599,6 +670,9 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 String(args.url || ''),
                 Number(args.maxChars || FETCH_PAGE_MAX_CHARS)
             );
+
+        case 'ghost_search':
+            return await ghostSearch(args);
 
         default:
             return { error: `Function ${call.name} not implemented` };

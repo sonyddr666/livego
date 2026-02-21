@@ -10,6 +10,13 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
       allowedHosts: ['.trycloudflare.com', 'localhost', '.onrender.com', '.livego.dev'],
+      proxy: {
+        '/api/ghost': {
+          target: 'https://api.ghost1.cloud',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/ghost/, ''),
+        },
+      },
     },
     preview: {
       port: 10000,
