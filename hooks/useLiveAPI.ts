@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
-
+import { calculateRMSVolume } from '../utils/audioEnhancement';
 import { useSettingsStore } from '../store/settingsStore';
 
 // Audio constants
@@ -527,10 +527,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               return;
             }
 
-            // Send audio continuously without dropping chunks
+            // Send audio continuously, but drop pure silence/noise to prevent API overwhelm
             const sendAudioChunk = (inputData: Float32Array) => {
               // Don't send if disconnected or muted
               if (!isConnectedRef.current || isMutedRef.current) {
+                return;
+              }
+
+              // Drop silent chunks to avoid keeping the AI endlessly listening to background noise
+              // RMS 0.01 is a reasonable threshold for speech vs silence
+              const rms = calculateRMSVolume(inputData);
+              if (rms < 0.01) {
                 return;
               }
 
