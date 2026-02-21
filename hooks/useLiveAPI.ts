@@ -116,6 +116,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   const disconnect = useCallback(() => {
     if (audioWorkletNodeRef.current) {
+      audioWorkletNodeRef.current.port.onmessage = null; // Clean up the port listener to stop spam
       audioWorkletNodeRef.current.disconnect();
       audioWorkletNodeRef.current = null;
     }
@@ -318,153 +319,153 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       const tools: any[] = [];
 
       if (config.enableAdvancedFeatures) {
-        // Search tool: Google Search or Ghost-Search based on user preference
+        // Native audio models do not currently support mixing googleSearch with functionDeclarations
         if (searchMode === 'google') {
           tools.push({ googleSearch: {} });
+        } else {
+          // Function Calling - allows Gemini to access user data
+          tools.push({
+            functionDeclarations: [
+              {
+                name: 'get_conversation_history',
+                description: 'Busca histórico de conversas do usuário por período. Retorna estatísticas e lista de conversas.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    days: {
+                      type: 'number',
+                      description: 'Número de dias retroativos (ex: 7 para última semana, 30 para último mês)'
+                    }
+                  },
+                  required: ['days']
+                }
+              },
+              {
+                name: 'fetch_page',
+                description: 'Acessa uma URL e retorna texto resumido da pagina. Use quando o usuario pedir para abrir ou ler um site/link especifico.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    url: {
+                      type: 'string',
+                      description: 'URL da pagina a ser lida (http ou https).'
+                    },
+                    maxChars: {
+                      type: 'number',
+                      description: 'Limite maximo de caracteres no retorno (500 a 30000).'
+                    }
+                  },
+                  required: ['url']
+                }
+              },
+              // TEMPORARILY DISABLED - save_emotional_note
+              // {
+              //   name: 'save_emotional_note',
+              //   description: 'Salva uma observação sobre o estado emocional atual do usuário para análise futura.',
+              //   parameters: {
+              //     type: 'object',
+              //     properties: {
+              //       emotion: {
+              //         type: 'string',
+              //         description: 'Emoção detectada na voz ou mencionada pelo usuário',
+              //         enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral']
+              //       },
+              //       intensity: {
+              //         type: 'number',
+              //         description: 'Intensidade de 1 (leve) a 10 (extremo)'
+              //       },
+              //       trigger: {
+              //         type: 'string',
+              //         description: 'O que causou essa emoção, se mencionado pelo usuário'
+              //       },
+              //       note: {
+              //         type: 'string',
+              //         description: 'Observações adicionais sobre o contexto emocional'
+              //       }
+              //     },
+              //     required: ['emotion', 'intensity']
+              //   }
+              // },
+              {
+                name: 'get_time_patterns',
+                description: 'Analisa em quais horários ou dias da semana o usuário conversa mais e com quais emoções.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    analysisType: {
+                      type: 'string',
+                      description: 'Tipo de análise temporal',
+                      enum: ['hourly', 'daily']
+                    }
+                  },
+                  required: ['analysisType']
+                }
+              },
+              {
+                name: 'search_conversation_topic',
+                description: 'Busca conversas anteriores sobre um tema específico mencionado pelo usuário.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    topic: {
+                      type: 'string',
+                      description: 'Tema a buscar (ex: trabalho, família, ansiedade, sono)'
+                    },
+                    limit: {
+                      type: 'number',
+                      description: 'Máximo de resultados a retornar'
+                    }
+                  },
+                  required: ['topic']
+                }
+              },
+              {
+                name: 'get_emotion_statistics',
+                description: 'Retorna estatísticas agregadas sobre emoções registradas do usuário.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    period: {
+                      type: 'string',
+                      description: 'Período de análise',
+                      enum: ['today', 'week', 'month', 'all']
+                    }
+                  },
+                  required: ['period']
+                }
+              },
+              {
+                name: 'ghost_search',
+                description: 'Web search via Ghost-Search. IMPORTANT: Always translate the query to English for best results. Always include focus parameter.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Search query — MUST be in English for best results'
+                    },
+                    focus: {
+                      type: 'string',
+                      description: 'Search type. Use "web" by default.',
+                      enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram']
+                    },
+                    model: {
+                      type: 'string',
+                      description: 'AI model for search',
+                      enum: ['best', 'sonar', 'deep_research', 'gpt_5_2', 'claude_4_5_sonnet', 'gemini_3_flash']
+                    },
+                    time_range: {
+                      type: 'string',
+                      description: 'Time filter for results',
+                      enum: ['all', 'day', 'week', 'month', 'year']
+                    }
+                  },
+                  required: ['query', 'focus']
+                }
+              }
+            ]
+          });
         }
-
-        // Function Calling - allows Gemini to access user data
-        tools.push({
-          functionDeclarations: [
-            {
-              name: 'get_conversation_history',
-              description: 'Busca histórico de conversas do usuário por período. Retorna estatísticas e lista de conversas.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  days: {
-                    type: 'number',
-                    description: 'Número de dias retroativos (ex: 7 para última semana, 30 para último mês)'
-                  }
-                },
-                required: ['days']
-              }
-            },
-            {
-              name: 'fetch_page',
-              description: 'Acessa uma URL e retorna texto resumido da pagina. Use quando o usuario pedir para abrir ou ler um site/link especifico.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  url: {
-                    type: 'string',
-                    description: 'URL da pagina a ser lida (http ou https).'
-                  },
-                  maxChars: {
-                    type: 'number',
-                    description: 'Limite maximo de caracteres no retorno (500 a 30000).'
-                  }
-                },
-                required: ['url']
-              }
-            },
-            // TEMPORARILY DISABLED - save_emotional_note
-            // {
-            //   name: 'save_emotional_note',
-            //   description: 'Salva uma observação sobre o estado emocional atual do usuário para análise futura.',
-            //   parameters: {
-            //     type: 'object',
-            //     properties: {
-            //       emotion: {
-            //         type: 'string',
-            //         description: 'Emoção detectada na voz ou mencionada pelo usuário',
-            //         enum: ['happy', 'sad', 'anxious', 'angry', 'calm', 'neutral']
-            //       },
-            //       intensity: {
-            //         type: 'number',
-            //         description: 'Intensidade de 1 (leve) a 10 (extremo)'
-            //       },
-            //       trigger: {
-            //         type: 'string',
-            //         description: 'O que causou essa emoção, se mencionado pelo usuário'
-            //       },
-            //       note: {
-            //         type: 'string',
-            //         description: 'Observações adicionais sobre o contexto emocional'
-            //       }
-            //     },
-            //     required: ['emotion', 'intensity']
-            //   }
-            // },
-            {
-              name: 'get_time_patterns',
-              description: 'Analisa em quais horários ou dias da semana o usuário conversa mais e com quais emoções.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  analysisType: {
-                    type: 'string',
-                    description: 'Tipo de análise temporal',
-                    enum: ['hourly', 'daily']
-                  }
-                },
-                required: ['analysisType']
-              }
-            },
-            {
-              name: 'search_conversation_topic',
-              description: 'Busca conversas anteriores sobre um tema específico mencionado pelo usuário.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  topic: {
-                    type: 'string',
-                    description: 'Tema a buscar (ex: trabalho, família, ansiedade, sono)'
-                  },
-                  limit: {
-                    type: 'number',
-                    description: 'Máximo de resultados a retornar'
-                  }
-                },
-                required: ['topic']
-              }
-            },
-            {
-              name: 'get_emotion_statistics',
-              description: 'Retorna estatísticas agregadas sobre emoções registradas do usuário.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  period: {
-                    type: 'string',
-                    description: 'Período de análise',
-                    enum: ['today', 'week', 'month', 'all']
-                  }
-                },
-                required: ['period']
-              }
-            },
-            {
-              name: 'ghost_search',
-              description: 'Web search via Ghost-Search. IMPORTANT: Always translate the query to English for best results. Always include focus parameter.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  query: {
-                    type: 'string',
-                    description: 'Search query — MUST be in English for best results'
-                  },
-                  focus: {
-                    type: 'string',
-                    description: 'Search type. Use "web" by default.',
-                    enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram']
-                  },
-                  model: {
-                    type: 'string',
-                    description: 'AI model for search',
-                    enum: ['best', 'sonar', 'deep_research', 'gpt_5_2', 'claude_4_5_sonnet', 'gemini_3_flash']
-                  },
-                  time_range: {
-                    type: 'string',
-                    description: 'Time filter for results',
-                    enum: ['all', 'day', 'week', 'month', 'year']
-                  }
-                },
-                required: ['query', 'focus']
-              }
-            }
-          ]
-        });
       }
 
       console.log('[DEBUG] Creating WebSocket session...');
@@ -713,8 +714,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           systemInstruction: config.enableAdvancedFeatures
             ? buildAdvancedSystemInstruction(config.systemInstruction, config.useConversationContext)
             : config.systemInstruction,
