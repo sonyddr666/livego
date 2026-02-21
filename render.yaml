@@ -6,6 +6,9 @@ services:
     staticPublishPath: ./dist
     routes:
       - type: rewrite
+        source: /api/ghost/*
+        destination: https://api.ghost1.cloud/*
+      - type: rewrite
         source: /*
         destination: /index.html
     headers:

@@ -574,10 +574,8 @@ export async function ghostSearch(args: {
     focus?: string;
     time_range?: string;
 }): Promise<any> {
-    // Use proxy in dev, direct URL in production
-    const isLocalhost = typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const GHOST_SEARCH_URL = isLocalhost ? '/api/ghost/search' : 'https://api.ghost1.cloud/search';
+    // Always use proxy path — works in dev (Vite proxy) and production (Render _redirects proxy)
+    const GHOST_SEARCH_URL = '/api/ghost/search';
     const GHOST_TIMEOUT_MS = 30000; // deep_research pode demorar
 
     const body: Record<string, string> = {

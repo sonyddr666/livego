@@ -1,1 +1,2 @@
+/api/ghost/*  https://api.ghost1.cloud/:splat  200
 /*    /index.html   200
