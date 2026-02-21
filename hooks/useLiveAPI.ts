@@ -16,35 +16,7 @@ const AUDIO_CONFIG = {
   THROTTLE_MS: 50, // Throttle audio sends to prevent overwhelming the API
 } as const;
 
-// AudioWorklet processor code as a string to avoid external file loading issues
-const workletCode = `
-class PCMProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.buffer = [];
-    this.bufferSize = 2048; // Reduced from 4096 for lower latency
-  }
-
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    if (!input || !input[0]) return true;
-    
-    const channelData = input[0];
-    for (let i = 0; i < channelData.length; i++) {
-      this.buffer.push(channelData[i]);
-    }
-
-    if (this.buffer.length >= this.bufferSize) {
-      const chunk = new Float32Array(this.buffer);
-      this.port.postMessage(chunk);
-      this.buffer = [];
-    }
-
-    return true;
-  }
-}
-registerProcessor('pcm-processor', PCMProcessor);
-`;
+// The AudioWorklet processor code is now loaded statically from public/pcm-processor.js
 
 // Build enhanced system instruction for advanced features
 function buildAdvancedSystemInstruction(baseInstruction: string, useHistory: boolean = false): string {
@@ -298,14 +270,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       // Register AudioWorklet if available
       if (useWorklet) {
-        console.log('[DEBUG] Creating AudioWorklet blob...');
-        const blob = new Blob([workletCode], { type: 'application/javascript' });
-        const workletUrl = URL.createObjectURL(blob);
-        console.log('[DEBUG] AudioWorklet blob URL created:', workletUrl.substring(0, 50) + '...');
+        console.log('[DEBUG] Charging AudioWorklet from static file...');
+        const workletUrl = '/pcm-processor.js';
 
         try {
           await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
-          console.log('[DEBUG] AudioWorklet module added successfully');
+          console.log('[DEBUG] AudioWorklet module added successfully from', workletUrl);
         } catch (workletError) {
           console.warn('[DEBUG] AudioWorklet registration FAILED, falling back to ScriptProcessor:', workletError);
           useWorklet = false;
@@ -560,7 +530,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             };
 
             // Check if we registered AudioWorklet successfully earlier
-            const hasWorklet = !!inputAudioContextRef.current.audioWorklet;
+            const hasWorklet = useWorklet;
 
             if (hasWorklet) {
               console.log("[DEBUG] Creating AudioWorkletNode 'pcm-processor'...");
