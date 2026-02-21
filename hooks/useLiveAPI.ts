@@ -456,27 +456,27 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             },
             {
               name: 'ghost_search',
-              description: 'Pesquisa avançada via Ghost-Search. Suporta múltiplos modelos de IA, buscas acadêmicas, YouTube, Reddit e cálculos. Use para pesquisas profundas ou especializadas.',
+              description: 'Web search via Ghost-Search. IMPORTANT: Always write queries in English. Defaults are already set, just send the query. Only change focus/model if user explicitly requests (e.g. "search youtube", "use deep research").',
               parameters: {
                 type: 'object',
                 properties: {
                   query: {
                     type: 'string',
-                    description: 'Pergunta ou termo de busca'
-                  },
-                  model: {
-                    type: 'string',
-                    description: 'Modelo de IA para a busca',
-                    enum: ['best', 'sonar', 'deep_research', 'gpt_5_2', 'claude_4_5_sonnet', 'gemini_3_flash']
+                    description: 'Search query — ALWAYS in English for best results'
                   },
                   focus: {
                     type: 'string',
-                    description: 'Tipo de busca especializada',
+                    description: 'Search type. Default: web. Only change if user asks.',
                     enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram']
+                  },
+                  model: {
+                    type: 'string',
+                    description: 'AI model. Default: best. Only change if user asks.',
+                    enum: ['best', 'sonar', 'deep_research']
                   },
                   time_range: {
                     type: 'string',
-                    description: 'Filtro temporal dos resultados',
+                    description: 'Time filter. Default: all.',
                     enum: ['all', 'day', 'week', 'month', 'year']
                   }
                 },
