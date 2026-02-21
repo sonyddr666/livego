@@ -574,7 +574,10 @@ export async function ghostSearch(args: {
     focus?: string;
     time_range?: string;
 }): Promise<any> {
-    const GHOST_SEARCH_URL = '/api/ghost/search';
+    // Use proxy in dev, direct URL in production
+    const isLocalhost = typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const GHOST_SEARCH_URL = isLocalhost ? '/api/ghost/search' : 'https://api.ghost1.cloud/search';
     const GHOST_TIMEOUT_MS = 30000; // deep_research pode demorar
 
     const body: Record<string, string> = {
@@ -587,6 +590,7 @@ export async function ghostSearch(args: {
     };
 
     console.log('[Ghost-Search] Requesting:', body);
+    console.log('[Ghost-Search] URL:', GHOST_SEARCH_URL);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), GHOST_TIMEOUT_MS);
@@ -601,15 +605,38 @@ export async function ghostSearch(args: {
 
         clearTimeout(timeoutId);
 
+        // Read as text first to handle empty/non-JSON responses safely
+        const rawText = await response.text();
+        console.log('[Ghost-Search] HTTP', response.status, '| Body length:', rawText.length);
+
         if (!response.ok) {
             return {
                 ok: false,
-                error: `Ghost-Search HTTP ${response.status}`,
+                error: `Ghost-Search HTTP ${response.status}: ${rawText.slice(0, 200)}`,
                 query: args.query
             };
         }
 
-        const data = await response.json();
+        if (!rawText || !rawText.trim()) {
+            return {
+                ok: false,
+                error: 'Ghost-Search retornou resposta vazia',
+                query: args.query
+            };
+        }
+
+        let data: any;
+        try {
+            data = JSON.parse(rawText);
+        } catch (parseErr) {
+            console.error('[Ghost-Search] JSON parse error. Raw (first 500 chars):', rawText.slice(0, 500));
+            return {
+                ok: false,
+                error: 'Resposta inválida da API Ghost-Search',
+                query: args.query
+            };
+        }
+
         console.log('[Ghost-Search] Response:', data.status, data.model_used);
 
         return {
