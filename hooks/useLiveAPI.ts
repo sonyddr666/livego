@@ -456,31 +456,31 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             },
             {
               name: 'ghost_search',
-              description: 'Web search via Ghost-Search. IMPORTANT: Always write queries in English. Defaults are already set, just send the query. Only change focus/model if user explicitly requests (e.g. "search youtube", "use deep research").',
+              description: 'Web search via Ghost-Search. IMPORTANT: Always translate the query to English for best results. Always include focus parameter.',
               parameters: {
                 type: 'object',
                 properties: {
                   query: {
                     type: 'string',
-                    description: 'Search query — ALWAYS in English for best results'
+                    description: 'Search query — MUST be in English for best results'
                   },
                   focus: {
                     type: 'string',
-                    description: 'Search type. Default: web. Only change if user asks.',
+                    description: 'Search type. Use "web" by default.',
                     enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram']
                   },
                   model: {
                     type: 'string',
-                    description: 'AI model. Default: best. Only change if user asks.',
-                    enum: ['best', 'sonar', 'deep_research']
+                    description: 'AI model for search',
+                    enum: ['best', 'sonar', 'deep_research', 'gpt_5_2', 'claude_4_5_sonnet', 'gemini_3_flash']
                   },
                   time_range: {
                     type: 'string',
-                    description: 'Time filter. Default: all.',
+                    description: 'Time filter for results',
                     enum: ['all', 'day', 'week', 'month', 'year']
                   }
                 },
-                required: ['query']
+                required: ['query', 'focus']
               }
             }
           ]

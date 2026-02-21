@@ -567,14 +567,14 @@
             if (mode === 'all' || mode === 'ghost_only') {
                 declarations.push({
                     name: 'ghost_search',
-                    description: 'Web search via Ghost-Search. IMPORTANT: Always write queries in English. Defaults are already set, just send the query. Only change focus/model if user explicitly requests (e.g. "search youtube", "use deep research").',
+                    description: 'Pesquisa avançada via Ghost-Search. Suporta múltiplos modelos de IA, buscas acadêmicas, YouTube, Reddit e cálculos.',
                     parameters: {
                         type: 'object',
                         properties: {
-                            query: { type: 'string', description: 'Search query — ALWAYS in English for best results' },
-                            focus: { type: 'string', description: 'Search type. Default: web. Only change if user asks.', enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram'] },
-                            model: { type: 'string', description: 'AI model. Default: best. Only change if user asks.', enum: ['best', 'sonar', 'deep_research'] },
-                            time_range: { type: 'string', description: 'Time filter. Default: all.', enum: ['all', 'day', 'week', 'month', 'year'] }
+                            query: { type: 'string', description: 'Pergunta ou termo de busca' },
+                            model: { type: 'string', description: 'Modelo de IA', enum: ['best', 'sonar', 'deep_research'] },
+                            focus: { type: 'string', description: 'Tipo de busca', enum: ['web', 'academic', 'youtube', 'reddit', 'wolfram'] },
+                            time_range: { type: 'string', description: 'Filtro temporal', enum: ['all', 'day', 'week', 'month', 'year'] }
                         },
                         required: ['query']
                     }
@@ -695,8 +695,11 @@ Para ler uma URL específica, use fetch_page.`;
                         })
                     });
                     const data = await res.json();
+                    if (data.status !== 'success') {
+                        return { ok: false, error: 'API Error: ' + JSON.stringify(data) };
+                    }
                     return {
-                        ok: data.status === 'success',
+                        ok: true,
                         answer: data.answer || '',
                         model_used: data.model_used,
                         citations: (data.citations || []).slice(0, 5)
