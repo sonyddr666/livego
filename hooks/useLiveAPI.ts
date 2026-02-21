@@ -643,10 +643,19 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
           },
-          onclose: (event) => {
+          onclose: (event: any) => {
             console.log("[DEBUG] Live Session Closed");
+            console.log("[DEBUG] Close code:", event?.code);
+            console.log("[DEBUG] Close reason:", event?.reason);
+            console.log("[DEBUG] Was clean:", event?.wasClean);
             console.log("[DEBUG] Close event:", event);
             console.log("[DEBUG] AudioContext state at close:", inputAudioContextRef.current?.state);
+            // Common codes: 1000=normal, 1008=policy violation (bad key), 1011=server error/quota
+            if (event?.code === 1011) {
+              console.error("[DEBUG] Server error — check API quota, model access, or setup message format");
+            } else if (event?.code === 1008) {
+              console.error("[DEBUG] Policy violation — likely invalid or unauthorized API key");
+            }
             disconnect();
           },
           onerror: (err: any) => {

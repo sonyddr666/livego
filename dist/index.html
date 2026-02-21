@@ -1,7 +1,18 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="en">
 
 <head>
+    <script>
+        // Prevent flash of wrong theme (FOUC) — read persisted Zustand theme before render
+        (function () {
+            try {
+                var stored = localStorage.getItem('livego-theme');
+                var theme = stored ? JSON.parse(stored).state.theme : 'system';
+                var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                if (isDark) document.documentElement.classList.add('dark');
+            } catch (e) { }
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LIVEGO - Voice AI Chat</title>
@@ -272,7 +283,7 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/index-DFcSOHht.js"></script>
+  <script type="module" crossorigin src="/assets/index-C-Nh3V5e.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/vendor-react-B--z-fyW.js">
   <link rel="modulepreload" crossorigin href="/assets/vendor-gemini-DHoCyaQq.js">
 </head>
@@ -312,7 +323,7 @@
                 }
             });
         }
-    </script>
+    </script>
 
     <!-- Service Worker Registration -->
     <script>
