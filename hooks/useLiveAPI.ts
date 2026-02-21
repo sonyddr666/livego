@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
-import { throttle } from '../utils/rateLimiter';
+
 import { useSettingsStore } from '../store/settingsStore';
 
 // Audio constants
@@ -288,6 +288,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         console.log('[DEBUG] Output AudioContext after resume:', outputAudioContextRef.current.state);
       }
 
+      // Check if AudioWorklet is supported (requires HTTPS or localhost)
+      if (!inputAudioContextRef.current.audioWorklet) {
+        const errorMsg = 'Your browser blocked AudioWorklet. This usually happens when accessing via an insecure HTTP IP address instead of localhost or HTTPS. Please use localhost or a secure tunnel to test audio.';
+        console.error('[DEBUG]', errorMsg);
+        throw new Error(errorMsg);
+      }
+
       // Register AudioWorklet
       console.log('[DEBUG] Creating AudioWorklet blob...');
       const blob = new Blob([workletCode], { type: 'application/javascript' });
@@ -520,8 +527,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               return;
             }
 
-            // Throttled audio sender to prevent overwhelming the API
-            const throttledSendAudio = throttle((inputData: Float32Array) => {
+            // Send audio continuously without dropping chunks
+            const sendAudioChunk = (inputData: Float32Array) => {
               // Don't send if disconnected or muted
               if (!isConnectedRef.current || isMutedRef.current) {
                 return;
@@ -535,11 +542,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                   session.sendRealtimeInput({ media: pcmBlob });
                 }
               });
-            }, AUDIO_CONFIG.THROTTLE_MS);
+            };
 
             audioWorkletNodeRef.current.port.onmessage = (event: MessageEvent) => {
               const inputData = event.data as Float32Array;
-              throttledSendAudio(inputData);
+              sendAudioChunk(inputData);
             };
 
             inputSourceRef.current.connect(audioWorkletNodeRef.current);
