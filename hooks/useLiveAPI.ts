@@ -240,25 +240,56 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       setIsConnecting(true); // Start loading
       setCurrentConfig(config);
 
+      console.log('[DEBUG] Starting connection...');
+
       // Prioritize user-configured API key over environment variable
       const apiKey = config.apiKey || process.env.API_KEY;
       if (!apiKey) {
         throw new Error("API Key not found. Please configure your API key in Settings > Account or set VITE_GEMINI_API_KEY environment variable.");
       }
 
+      console.log('[DEBUG] API key found, creating GoogleGenAI instance...');
       const ai = new GoogleGenAI({ apiKey });
 
       const AudioContextClass = window.AudioContext || (window as WebkitWindow).webkitAudioContext;
       if (!AudioContextClass) {
         throw new Error('AudioContext not supported in this browser');
       }
+      console.log('[DEBUG] AudioContext class available:', !!AudioContextClass);
+
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
 
+      // CRITICAL DEBUG: Check AudioContext state on mobile
+      console.log('[DEBUG] Input AudioContext state:', inputAudioContextRef.current.state);
+      console.log('[DEBUG] Output AudioContext state:', outputAudioContextRef.current.state);
+      console.log('[DEBUG] User Agent:', navigator.userAgent);
+
+      // Resume AudioContext if suspended (common on mobile browsers)
+      if (inputAudioContextRef.current.state === 'suspended') {
+        console.log('[DEBUG] Input AudioContext is SUSPENDED - attempting resume...');
+        await inputAudioContextRef.current.resume();
+        console.log('[DEBUG] Input AudioContext after resume:', inputAudioContextRef.current.state);
+      }
+      if (outputAudioContextRef.current.state === 'suspended') {
+        console.log('[DEBUG] Output AudioContext is SUSPENDED - attempting resume...');
+        await outputAudioContextRef.current.resume();
+        console.log('[DEBUG] Output AudioContext after resume:', outputAudioContextRef.current.state);
+      }
+
       // Register AudioWorklet
+      console.log('[DEBUG] Creating AudioWorklet blob...');
       const blob = new Blob([workletCode], { type: 'application/javascript' });
       const workletUrl = URL.createObjectURL(blob);
-      await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
+      console.log('[DEBUG] AudioWorklet blob URL created:', workletUrl.substring(0, 50) + '...');
+
+      try {
+        await inputAudioContextRef.current.audioWorklet.addModule(workletUrl);
+        console.log('[DEBUG] AudioWorklet module added successfully');
+      } catch (workletError) {
+        console.error('[DEBUG] AudioWorklet registration FAILED:', workletError);
+        throw workletError;
+      }
 
       // Setup Input Analyser
       inputAnalyserRef.current = inputAudioContextRef.current.createAnalyser();
@@ -279,7 +310,17 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       setTranscript('');
       currentSpeakerRef.current = null;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[DEBUG] Requesting microphone permission...');
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('[DEBUG] Microphone access granted');
+        console.log('[DEBUG] Audio tracks:', stream.getAudioTracks().length);
+        console.log('[DEBUG] Track settings:', stream.getAudioTracks()[0]?.getSettings());
+      } catch (micError) {
+        console.error('[DEBUG] Microphone access DENIED:', micError);
+        throw micError;
+      }
 
       // Build tools array based on config
       const tools: any[] = [];
@@ -403,17 +444,23 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         });
       }
 
+      console.log('[DEBUG] Creating WebSocket session...');
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
           onopen: () => {
-            console.log("Live Session Opened");
+            console.log("[DEBUG] Live Session Opened - WebSocket connected");
+            console.log("[DEBUG] AudioContext state at onopen:", inputAudioContextRef.current?.state);
             setConnected(true);
             isConnectedRef.current = true;
             setIsConnecting(false); // Stop loading
 
-            if (!inputAudioContextRef.current) return;
+            if (!inputAudioContextRef.current) {
+              console.error("[DEBUG] ERROR: inputAudioContext is null at onopen!");
+              return;
+            }
 
+            console.log("[DEBUG] Creating MediaStreamSource...");
             inputSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(stream);
             // Connect input to analyser for visualization
             if (inputAnalyserRef.current) {
@@ -421,7 +468,14 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             // Replace ScriptProcessor with AudioWorklet
-            audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+            console.log("[DEBUG] Creating AudioWorkletNode 'pcm-processor'...");
+            try {
+              audioWorkletNodeRef.current = new AudioWorkletNode(inputAudioContextRef.current, 'pcm-processor');
+              console.log("[DEBUG] AudioWorkletNode created successfully");
+            } catch (workletNodeError) {
+              console.error("[DEBUG] AudioWorkletNode creation FAILED:", workletNodeError);
+              return;
+            }
 
             // Throttled audio sender to prevent overwhelming the API
             const throttledSendAudio = throttle((inputData: Float32Array) => {
@@ -433,20 +487,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               // Pass the native sample rate for automatic resampling to 16kHz
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
               const pcmBlob = createPcmBlob(inputData, nativeSampleRate);
-              sessionPromise.then(session => {
+              sessionPromise.then((session: any) => {
                 if (isConnectedRef.current) {
                   session.sendRealtimeInput({ media: pcmBlob });
                 }
               });
             }, AUDIO_CONFIG.THROTTLE_MS);
 
-            audioWorkletNodeRef.current.port.onmessage = (event) => {
+            audioWorkletNodeRef.current.port.onmessage = (event: MessageEvent) => {
               const inputData = event.data as Float32Array;
               throttledSendAudio(inputData);
             };
 
             inputSourceRef.current.connect(audioWorkletNodeRef.current);
             audioWorkletNodeRef.current.connect(inputAudioContextRef.current.destination); // Connect to destination to keep graph alive, though we don't output audio
+            console.log("[DEBUG] Audio pipeline connected successfully");
           },
           onmessage: async (message: LiveServerMessage) => {
             // Debug: Log all incoming messages to see Google Search grounding data
@@ -545,12 +600,16 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               }
             }
           },
-          onclose: () => {
-            console.log("Live Session Closed");
+          onclose: (event) => {
+            console.log("[DEBUG] Live Session Closed");
+            console.log("[DEBUG] Close event:", event);
+            console.log("[DEBUG] AudioContext state at close:", inputAudioContextRef.current?.state);
             disconnect();
           },
-          onerror: (err) => {
-            console.error("Live Session Error", err);
+          onerror: (err: any) => {
+            console.error("[DEBUG] Live Session Error:", err);
+            console.error("[DEBUG] Error type:", typeof err);
+            console.error("[DEBUG] Error details:", JSON.stringify(err, null, 2));
             disconnect();
           }
         },
@@ -568,10 +627,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         }
       });
 
+      console.log("[DEBUG] Session promise created, waiting for connection...");
       sessionPromiseRef.current = sessionPromise;
 
     } catch (error) {
-      console.error("Connection failed", error);
+      console.error("[DEBUG] Connection failed with error:", error);
+      console.error("[DEBUG] Error stack:", error instanceof Error ? error.stack : 'No stack');
       disconnect();
     }
   }, [disconnect]);
