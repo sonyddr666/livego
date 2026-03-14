@@ -8,6 +8,8 @@ import type { Locale, TranslationKey } from '../i18n';
 import { useThemeStore } from '../store/themeStore';
 import { useInstructionPresets, type InstructionPreset } from '../store/instructionPresetsStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useSkillsStore, type Skill } from '../store/skillsStore';
+import { SkillsScreenContent } from './SkillsScreen';
 import { APP_VERSION } from '../config/version';
 
 // Instructions Screen with Presets Component
@@ -295,6 +297,13 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                         color="bg-pink-500"
                         onClick={() => onNavigate(ScreenName.INSTRUCTIONS)}
                     />
+                    <SettingsItem
+                        icon={<IconSparkles />}
+                        label="Skills"
+                        value={`${useSkillsStore.getState().getEnabledSkills().length} ativas`}
+                        color="bg-amber-500"
+                        onClick={() => onNavigate(ScreenName.SKILLS)}
+                    />
                     {/* Search Mode Toggle */}
                     <button
                         type="button"
@@ -557,6 +566,11 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
     // --- INSTRUCTIONS SCREEN with Presets ---
     if (screen === ScreenName.INSTRUCTIONS) {
         return <InstructionsScreenWithPresets onBack={onBack} />;
+    }
+
+    // --- SKILLS SCREEN ---
+    if (screen === ScreenName.SKILLS) {
+        return <SkillsScreenContent onBack={onBack} />;
     }
 
     // --- ACCOUNT SCREEN ---

@@ -576,10 +576,13 @@ export async function ghostSearch(args: {
 }): Promise<any> {
     // Always use proxy path — works in dev (Vite proxy) and production (Render _redirects proxy)
     const GHOST_SEARCH_URL = '/api/ghost/search';
-    const GHOST_TIMEOUT_MS = 30000; // deep_research pode demorar
+    const GHOST_TIMEOUT_MS = 60000; // deep_research pode demorar ate 60s
+
+    // Normalize query: Gemini sometimes sends it as Array(['text']) instead of string
+    const normalizedQuery = Array.isArray(args.query) ? args.query.join(' ') : args.query;
 
     const body: Record<string, string> = {
-        query: args.query,
+        query: normalizedQuery,
         model: args.model || 'best',
         focus: args.focus || 'web',
         time_range: args.time_range || 'all',
@@ -590,8 +593,9 @@ export async function ghostSearch(args: {
     console.log('[Ghost-Search] Requesting:', body);
     console.log('[Ghost-Search] URL:', GHOST_SEARCH_URL);
 
+    const startTime = Date.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort("Nova busca iniciada ou limite de tempo excedido"), GHOST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort("Timeout de seguranca: 60s sem resposta do Ghost-Search"), GHOST_TIMEOUT_MS);
 
     try {
         const response = await fetch(GHOST_SEARCH_URL, {
@@ -605,7 +609,7 @@ export async function ghostSearch(args: {
 
         // Read as text first to handle empty/non-JSON responses safely
         const rawText = await response.text();
-        console.log('[Ghost-Search] HTTP', response.status, '| Body length:', rawText.length);
+        console.log(`[Ghost-Search] HTTP ${response.status} | Time: ${((Date.now() - startTime)/1000).toFixed(1)}s | Body:`, rawText.length);
 
         if (!response.ok) {
             return {
@@ -651,11 +655,15 @@ export async function ghostSearch(args: {
         };
     } catch (error) {
         clearTimeout(timeoutId);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         const msg = error instanceof Error ? error.message : String(error);
-        console.error('[Ghost-Search] Error:', msg);
+        console.error(`[Ghost-Search] Error after ${elapsed}s:`, msg);
+        
+        const isTimeout = msg.includes('abort') || Number(elapsed) >= (GHOST_TIMEOUT_MS / 1000 - 1);
+        
         return {
             ok: false,
-            error: msg.includes('abort') ? 'Timeout na busca Ghost-Search' : msg,
+            error: isTimeout ? `Timeout na busca Ghost-Search apos ${elapsed}s` : msg,
             query: args.query
         };
     }
@@ -698,6 +706,33 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
 
         case 'ghost_search':
             return await ghostSearch(args);
+
+        case 'show_image':
+            console.log('[Skill] show_image called:', args);
+            // Dispatch a custom event so any component can react
+            window.dispatchEvent(new CustomEvent('livego:show_image', {
+                detail: {
+                    query: args.query || '',
+                    caption: args.caption || '',
+                    source: args.source || 'search',
+                    duration: args.duration || 15,
+                    timestamp: Date.now(),
+                }
+            }));
+            return {
+                ok: true,
+                displayed: true,
+                // Minimal response — Gemini already announced the image, 
+                // don't give him text that makes him repeat it
+            };
+
+        case 'hide_image':
+            console.log('[Skill] hide_image called');
+            window.dispatchEvent(new CustomEvent('livego:hide_image'));
+            return {
+                ok: true,
+                message: 'Todas as imagens foram removidas da tela.',
+            };
 
         default:
             return { error: `Function ${call.name} not implemented` };

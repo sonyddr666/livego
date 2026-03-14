@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { HistoryItem } from '../types';
-import { IconChevronLeft, IconTrash, IconClock, IconUser, IconSparkles } from './Icons';
+import { HistoryItem, ToolResult } from '../types';
+import { IconChevronLeft, IconTrash, IconClock, IconUser, IconSparkles, IconGlobe, IconInfo, IconChevronRight } from './Icons';
 import { useI18n } from '../i18n';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -19,6 +19,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
     const { t } = useI18n();
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const { useConversationContext, setUseConversationContext } = useSettingsStore();
+    const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
 
     // Helper to parse the raw transcript string into chat messages
     const parsedMessages = useMemo(() => {
@@ -79,6 +80,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                     </div>
                 </div>
 
+                {/* Dropped Session Banner */}
+                {selectedItem.wasDropped && (
+                    <div className="mx-4 mt-3 px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-2">
+                        <IconInfo className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="text-xs text-amber-600 dark:text-amber-400">Conexão caiu — dados recuperados automaticamente</span>
+                    </div>
+                )}
+
                 {/* Chat Bubble View */}
                 <div className="flex-1 p-4 overflow-y-auto bg-theme-primary space-y-4">
                     {parsedMessages.length === 0 ? (
@@ -113,6 +122,78 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                             </div>
                         ))
                     )}
+
+                    {/* Tool Results Section */}
+                    {selectedItem.toolResults && selectedItem.toolResults.length > 0 && (
+                        <div className="mt-4 space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <IconGlobe className="w-4 h-4 text-emerald-500" />
+                                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                                    Pesquisas ({selectedItem.toolResults.length})
+                                </span>
+                            </div>
+                            {selectedItem.toolResults.map((tr: ToolResult, idx: number) => {
+                                const isExpanded = expandedTools.has(idx);
+                                return (
+                                    <div key={idx} className="bg-theme-secondary border border-theme rounded-xl overflow-hidden shadow-sm">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setExpandedTools(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(idx)) next.delete(idx); else next.add(idx);
+                                                    return next;
+                                                });
+                                            }}
+                                            className="w-full px-4 py-3 flex items-center gap-3 hover:bg-theme-hover transition-colors"
+                                        >
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                                                tr.ok ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                                                      : 'bg-red-100 dark:bg-red-900/30 text-red-500'
+                                            }`}>
+                                                <IconGlobe className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex-1 text-left min-w-0">
+                                                <p className="text-sm font-medium text-theme-primary truncate">
+                                                    {tr.toolName === 'ghost_search' ? '🔍 Ghost Search' : `🔧 ${tr.toolName}`}
+                                                </p>
+                                                <p className="text-xs text-theme-secondary truncate">"{tr.query}"</p>
+                                            </div>
+                                            <IconChevronRight className={`w-4 h-4 text-theme-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="px-4 pb-3 border-t border-theme">
+                                                {tr.answer ? (
+                                                    <p className="text-sm text-theme-primary mt-2 leading-relaxed whitespace-pre-wrap">
+                                                        {tr.answer.substring(0, 800)}
+                                                        {tr.answer.length > 800 && '...'}
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-sm text-theme-muted mt-2 italic">Sem resposta disponível</p>
+                                                )}
+                                                {tr.citations && tr.citations.length > 0 && (
+                                                    <div className="mt-2 space-y-1">
+                                                        <p className="text-xs font-medium text-theme-secondary">📎 Fontes:</p>
+                                                        {tr.citations.map((c: { title: string; url: string }, ci: number) => (
+                                                            <a key={ci} href={c.url} target="_blank" rel="noopener noreferrer"
+                                                               className="block text-xs text-blue-500 hover:underline truncate">
+                                                                {c.title || c.url}
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <p className="text-[10px] text-theme-muted mt-2">
+                                                    {tr.ok ? '✅ Concluído' : '❌ Falhou'}
+                                                    {tr.timestamp ? ` — ${new Date(tr.timestamp).toLocaleTimeString()}` : ''}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <div className="h-4" /> {/* Bottom spacer */}
                 </div>
             </div>
@@ -167,7 +248,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                                 </div>
                                 <div className="flex-1">
                                     <h3 className="text-sm font-semibold text-theme-primary">{item.date}</h3>
-                                    <p className="text-xs text-theme-secondary">{item.duration}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xs text-theme-secondary">{item.duration}</p>
+                                        {item.toolResults && item.toolResults.length > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full font-medium">
+                                                🔍 {item.toolResults.length}
+                                            </span>
+                                        )}
+                                        {item.wasDropped && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full font-medium">
+                                                ⚠️
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <button
                                     type="button"

@@ -11,7 +11,8 @@ export enum ScreenName {
   VOICE = 'VOICE',
   INSTRUCTIONS = 'INSTRUCTIONS',
   HISTORY = 'HISTORY',
-  ANALYTICS = 'ANALYTICS'
+  ANALYTICS = 'ANALYTICS',
+  SKILLS = 'SKILLS'
 }
 
 export interface SettingsItemProps {
@@ -27,6 +28,32 @@ export interface LiveConfig {
   apiKey?: string;
   enableAdvancedFeatures?: boolean;
   useConversationContext?: boolean;
+  onUnexpectedDisconnect?: (data: {
+    transcript: string;
+    toolResults: ToolResult[];
+    closeCode: number;
+    closeReason: string;
+  }) => void;
+}
+
+export interface ToolResult {
+  toolName: string;
+  query: string;
+  timestamp: number;
+  answer?: string;
+  citations?: { title: string; url: string }[];
+  ok: boolean;
+}
+
+export interface DroppedSession {
+  dropped: true;
+  timestamp: number;
+  transcript: string;
+  toolResults: ToolResult[];
+  closeCode: number;
+  closeReason: string;
+  pendingGhostResults: any[];
+  startTime: number;
 }
 
 export interface HistoryItem {
@@ -34,6 +61,10 @@ export interface HistoryItem {
   date: string;
   duration: string;
   transcript: string;
+  toolResults?: ToolResult[];
+  closeReason?: 'manual' | 'error';
+  closeCode?: number;
+  wasDropped?: boolean;
 }
 
 // Advanced Analytics Types

@@ -1,0 +1,701 @@
+================================================================================
+  PLANO DE MELHORIAS V2 - LIVEGO
+  Data: 13/03/2026
+  Status: ANÁLISE E PLANO — NENHUM CÓDIGO ALTERADO
+  
+  NOTA: Este plano incorpora as diretrizes do desenvolvedor:
+  - Ghost Search NÃO deve ser cancelado — os dados VÃO chegar
+  - Dados de buscas devem ser salvos no histórico
+  - Reconexão manual com contexto salvo da sessão anterior
+  - Transcrição ao vivo (inputAudioTranscription/outputAudioTranscription)
+    NÃO pode ser removida
+  - Timeout 1011 resolvido com busca dual (Google nativo + Ghost background)
+================================================================================
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SUMÁRIO DOS PROBLEMAS E MELHORIAS                                         ║
+║                                                                            ║
+║  BLOCO A — FLUXO DE TOOLS E TIMEOUT (CRÍTICO)                             ║
+║    A1. Timeout 1011: busca dual Google + Ghost em background               ║
+║    A2. Áudio continua enviando após WebSocket fechar                       ║
+║    A3. Ghost Search NÃO deve ser abortado                                  ║
+║                                                                            ║
+║  BLOCO B — HISTÓRICO E PERSISTÊNCIA (CRÍTICO)                             ║
+║    B1. Histórico só salva em handleEndCall (chamada manual)                ║
+║    B2. Dados do Ghost Search não entram no histórico                       ║
+║    B3. Quando conexão cai, transcript/contexto se perde                    ║
+║    B4. Flag de reconexão com contexto salvo                                ║
+║                                                                            ║
+║  BLOCO C — RECONEXÃO E RESILIÊNCIA (IMPORTANTE)                           ║
+║    C1. Erro 1008 por reconexão sem cleanup                                 ║
+║    C2. Reconexão manual com injeção de contexto                            ║
+║                                                                            ║
+║  BLOCO D — PROBLEMAS MENORES                                              ║
+║    D1. SpeechSynthesis conflitante                                         ║
+║    D2. processAudioQueue fire-and-forget                                   ║
+║    D3. API Key exposta                                                     ║
+║    D4. X-Frame-Options / Tailwind CDN                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+BLOCO A — FLUXO DE TOOLS E TIMEOUT
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+A1. TIMEOUT 1011 — BUSCA DUAL (GOOGLE NATIVO + GHOST EM BACKGROUND)
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA ORIGINAL:
+  O Ghost Search demora 36-43 segundos. O Gemini Live API tem timeout
+  interno de ~15-30s para tool calls. Quando a resposta do ghost_search
+  chega, o WebSocket já foi fechado pelo Google (erro 1011).
+
+VISÃO DO DESENVOLVEDOR:
+  O Ghost Search NÃO pode ser cancelado — os dados VÃO chegar eventualmente.
+  A solução é usar uma estratégia DUAL:
+  
+  1. Quando o Gemini pede ghost_search, INICIAR a busca em background
+  2. IMEDIATAMENTE responder ao Gemini dizendo "estou buscando, enquanto
+     isso vou usar o Google nativo para dar uma resposta rápida"
+  3. O Gemini usa o Google Search nativo (que já está configurado como
+     tool: { googleSearch: {} }) para dar uma resposta rápida
+  4. Quando o Ghost Search terminar:
+     a) Se a sessão ainda estiver ativa: oferecer o resultado complementar
+     b) Se a sessão caiu: salvar o resultado no histórico para a próxima
+        reconexão
+
+ONDE PRECISA MUDAR:
+
+  Arquivo: useLiveAPI.ts, Linhas 512-552 (bloco de tool calls)
+  
+  FLUXO ATUAL (problemático):
+    1. Recebe functionCall ghost_search
+    2. await handleToolCall(call)  ← BLOQUEIA 36s esperando
+    3. session.sendToolResponse()  ← WebSocket já morreu = erro
+  
+  FLUXO PROPOSTO:
+    1. Recebe functionCall ghost_search
+    2. INICIA handleToolCall(call) em background (sem await)
+    3. IMEDIATAMENTE envia sendToolResponse com:
+       {
+         ok: true,
+         status: "searching",
+         message: "Busca profunda iniciada. Enquanto aguardo o resultado
+                   completo, posso usar minha busca nativa do Google para
+                   te dar uma resposta rápida. Quer que eu pesquise agora
+                   pelo Google enquanto esperamos o Ghost Search?"
+       }
+    4. Quando ghost_search resolver:
+       a) Se isConnectedRef.current === true:
+          - Armazena resultado em uma ref/state (ex: pendingGhostResults)
+          - Na próxima interação do usuário, o Gemini pode ser informado
+            do resultado via system prompt atualizado ou via novo tool call
+       b) Se isConnectedRef.current === false:
+          - Salva resultado no localStorage como parte do histórico
+          - Na próxima reconexão, esse dado é carregado como contexto
+
+  DETALHES TÉCNICOS:
+  
+  No useLiveAPI.ts, o bloco de tool calls (linhas 512-552) ficaria assim
+  conceitualmente:
+  
+    // Para ghost_search: resposta imediata + busca em background
+    if (call.name === 'ghost_search') {
+      // 1. Responder IMEDIATAMENTE ao Gemini (evita timeout)
+      const immediateResponse = {
+        ok: true,
+        status: 'searching_in_background',
+        message: 'Busca profunda do Ghost Search foi iniciada em background.
+                  Enquanto aguardo, posso pesquisar rapidamente pelo Google.
+                  Pergunte ao usuário se ele quer a resposta rápida do Google
+                  enquanto esperamos.',
+      };
+      session.sendToolResponse({
+        functionResponses: [{
+          id: call.id, name: call.name, response: immediateResponse
+        }]
+      });
+      
+      // 2. Busca continua em background
+      handleToolCall(call).then(ghostResult => {
+        if (isConnectedRef.current) {
+          // Sessão ainda ativa — guardar resultado para complementar
+          pendingGhostResultsRef.current.push(ghostResult);
+        } else {
+          // Sessão caiu — salvar no histórico para a próxima reconexão
+          saveGhostResultToHistory(ghostResult, call.args.query);
+        }
+      });
+      
+      return; // Não esperar o ghost_search terminar
+    }
+    
+    // Para outras tools: fluxo normal com await
+    const result = await handleToolCall(call);
+    session.sendToolResponse(...);
+
+  NOVA REF NECESSARIA:
+    const pendingGhostResultsRef = useRef<any[]>([]);
+
+  NOVA FUNÇÃO NECESSÁRIA (em dataFunctions.ts ou no próprio hook):
+    function saveGhostResultToHistory(result, query) {
+      // Salva em localStorage como "resultado pendente"
+      // para ser injetado na próxima reconexão
+    }
+
+
+────────────────────────────────────────────────────────────────────────────────
+A2. ÁUDIO CONTINUA ENVIANDO APÓS WEBSOCKET FECHAR
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  O AudioWorkletNode continua enviando chunks de PCM mesmo depois do
+  WebSocket fechar, gerando dezenas de erros "WebSocket is already in
+  CLOSING or CLOSED state" por segundo.
+
+CAUSA NO CÓDIGO:
+  useLiveAPI.ts, Linhas 370-394: sendAudioChunk()
+  - Linha 372: Verifica isConnectedRef.current
+  - Linha 390: sessionPromise.then() — a promise já está resolved, então
+    executa imediatamente
+  - PROBLEMA: isConnectedRef.current é setado false APENAS no disconnect()
+    que é chamado DEPOIS do onclose. Os chunks continuam no intervalo.
+
+  useLiveAPI.ts, Linha 406-408: port.onmessage do AudioWorkletNode
+  - Continua disparando a cada ~2.6ms (buffer 128 samples @ 48kHz)
+
+O QUE CORRIGIR:
+  1. No callback onclose (linha 557), ANTES de chamar disconnect():
+     - Setar isConnectedRef.current = false IMEDIATAMENTE
+     - Desconectar o AudioWorkletNode.port.onmessage = null
+  2. No sendAudioChunk, adicionar try/catch no session.sendRealtimeInput()
+     para capturar erros silenciosamente se o WebSocket está fechado
+  3. O disconnect() já limpa o AudioWorkletNode, mas é chamado DEPOIS —
+     o gap de tempo entre onclose e disconnect é onde o spam acontece
+
+
+────────────────────────────────────────────────────────────────────────────────
+A3. GHOST SEARCH NÃO DEVE SER ABORTADO
+────────────────────────────────────────────────────────────────────────────────
+
+DIRETRIZ DO DESENVOLVEDOR:
+  "Os dados da busca VÃO VIR, não importa — pode demorar mas o Ghost
+  vai responder."
+
+SITUAÇÃO ATUAL NO CÓDIGO:
+  dataFunctions.ts, Linhas 594-595:
+    const controller = new AbortController();
+    setTimeout(() => controller.abort("Nova busca iniciada ou limite de
+    tempo excedido"), GHOST_TIMEOUT_MS);
+  
+  O timeout é de 60s (GHOST_TIMEOUT_MS = 60000). Isso é aceitável para
+  um limite de segurança, mas a mensagem "Nova busca iniciada" é
+  confusa — não indica nova busca, indica timeout.
+
+O QUE VERIFICAR/AJUSTAR:
+  1. A mensagem do abort deve ser clara: "Timeout de segurança: 60s"
+  2. Se o Ghost Search realmente SEMPRE responde, podemos aumentar o
+     timeout ou removê-lo (mas manter um limite muito alto como 120s
+     como segurança)
+  3. NÃO cancelar a busca quando uma nova busca chega — cada busca
+     é independente e deve completar
+  4. O AbortController ATUAL já é local por chamada (um por invocação
+     de ghostSearch), então não há compartilhamento. Está correto.
+  5. A questão observada nos logs ("Error: Nova busca iniciada ou limite
+     de tempo excedido") parece ter vindo de uma VERSÃO ANTERIOR do
+     código que tinha um controller GLOBAL. Se o código atual é o da
+     linha 594, isso não deveria acontecer em <60s. VERIFICAR se não
+     há outro lugar que dispara abort externamente.
+
+
+================================================================================
+BLOCO B — HISTÓRICO E PERSISTÊNCIA
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+B1. HISTÓRICO SÓ SALVA EM handleEndCall (CHAMADA MANUAL)
+────────────────────────────────────────────────────────────────────────────────
+
+SITUAÇÃO ATUAL:
+  App.tsx, Linhas 118-138: handleEndCall()
+  
+  O histórico SÓ é salvo quando:
+    1. O usuário clica no botão de "encerrar chamada"
+    2. handleEndCall() calcula duração, pega transcript, cria HistoryItem
+    3. Salva no state → useEffect persiste no localStorage
+  
+  PROBLEMA GRAVE: Se a conexão CAIR (erro 1011, 1008, perda de internet):
+    - handleEndCall() NÃO é chamado
+    - O onclose do WebSocket chama disconnect() (useLiveAPI.ts:570)
+    - disconnect() limpa tudo (state, refs, AudioContext)
+    - O transcript que estava em setTranscript() É PERDIDO
+    - Nenhum HistoryItem é criado
+    - TODA A CONVERSA SE PERDE
+
+ONDE ESTÁ O BUG:
+  useLiveAPI.ts, Linha 570: onclose chama disconnect()
+  disconnect() (linhas 118-160):
+    - Limpa sessionPromise
+    - Seta connected = false
+    - Seta volume = 0
+    - NÃO salva nada
+    - Não avisa o App.tsx que a conexão caiu
+    - App.tsx nunca chama handleEndCall
+
+  App.tsx, handleEndCall (linha 118):
+    - Só é chamado via onClick do botão na UsageScreen
+    - NUNCA é chamado quando onclose dispara por erro
+
+O QUE PRECISA ACONTECER:
+  1. O useLiveAPI precisa NOTIFICAR o App.tsx quando a conexão cai
+     inesperadamente (não por ação do usuário)
+  2. Duas abordagens:
+     a) Retornar um "disconnectReason" do hook (ex: 'user', 'error_1011',
+        'error_1008', etc.)
+     b) Ou callback onDisconnect passado como parâmetro
+  3. Quando o App.tsx detectar desconexão inesperada:
+     - Salvar o transcript atual como HistoryItem (com flag "conexão caiu")
+     - Mostrar indicação visual de que a conexão caiu
+     - Ativar flag de "reconexão com contexto"
+
+
+────────────────────────────────────────────────────────────────────────────────
+B2. DADOS DO GHOST SEARCH NÃO ENTRAM NO HISTÓRICO
+────────────────────────────────────────────────────────────────────────────────
+
+SITUAÇÃO ATUAL:
+  O HistoryItem salvo no App.tsx (linhas 127-132) contém APENAS:
+    {
+      id: string,
+      date: string,
+      duration: string,
+      transcript: string    ← APENAS transcrição de áudio (User/Gemini)
+    }
+
+  A transcrição (transcript) vem do state "transcript" do useLiveAPI
+  (linha 85). Esse state é alimentado por:
+    - inputTranscription (o que o usuário FALOU)    — linhas 452-461
+    - outputTranscription (o que o Gemini FALOU)    — linhas 465-474
+  
+  NÃO INCLUI:
+    - Resultados de ghost_search (a resposta textual da busca)
+    - Resultados de fetch_page
+    - Resultados de qualquer tool call
+    - Dados de Google Search grounding
+    - Metadados das buscas (query, citations, model usado)
+
+ONDE A INFORMAÇÃO SE PERDE:
+  useLiveAPI.ts, Linhas 512-552: Tool calls executam e enviam resposta
+  ao Gemini, mas NÃO adicionam nada ao transcript/state.
+  
+  dataFunctions.ts, ghost_search retorna um objeto com:
+    - answer (texto da resposta)
+    - citations (referências)
+    - model_used, focus_mode, etc.
+  Esse objeto é enviado ao Gemini via sendToolResponse e DESCARTADO.
+
+O QUE PRECISA ACONTECER:
+  1. Quando uma tool call retornar com sucesso, ADICIONAR os dados
+     relevantes ao transcript ou a um state separado (ex: toolResults)
+  2. Exemplo para ghost_search:
+     - Após result = await handleToolCall(call):
+       setTranscript(prev => prev + '\n[Ghost Search: "' + args.query + 
+         '"]\n' + result.answer?.substring(0, 500) + '\n');
+     - Ou manter em um array separado: toolResultsRef.current.push(result)
+  3. No HistoryItem, incluir campo adicional:
+     {
+       ...existing fields,
+       toolResults: toolResultsRef.current,  // Array de resultados
+       searchQueries: [...],                 // Queries feitas
+     }
+  4. Na HistoryScreen.tsx, renderizar esses dados junto com as mensagens
+     de chat (ex: cards de "Busca realizada: X" entre as mensagens)
+
+
+────────────────────────────────────────────────────────────────────────────────
+B3. QUANDO CONEXÃO CAI, TRANSCRIPT/CONTEXTO SE PERDE
+────────────────────────────────────────────────────────────────────────────────
+
+SITUAÇÃO ATUAL:
+  Quando o WebSocket fecha por erro:
+  1. onclose dispara → chama disconnect()
+  2. disconnect() seta connected = false
+  3. App.tsx: useEffect [connected] muda, mas NÃO salva nada
+  4. O transcript ainda existe no state do useLiveAPI, MAS:
+     - O App.tsx não lê o transcript nesse momento
+     - Se o usuário navegar para outra tela ou fechar o app, PERDE TUDO
+  5. Se o usuário clicar em reconectar: connect() é chamado e
+     setTranscript('') (linha 303) APAGA o transcript anterior
+
+ONDE EXATAMENTE SE PERDE:
+  useLiveAPI.ts, Linha 303: setTranscript('') — limpa no novo connect
+  App.tsx: Não tem listener para "desconexão inesperada"
+
+O QUE PRECISA ACONTECER:
+  1. ANTES de limpar o transcript no connect(), salvar o transcript
+     anterior se existir (ou melhor: o App.tsx deve salvar antes)
+  2. Implementar "auto-save" periódico: a cada 30s de conversa ativa,
+     salvar um snapshot do transcript no localStorage como "sessão em
+     andamento" (key: livego_active_session)
+  3. No disconnect() por erro: mover o transcript da "sessão em
+     andamento" para o histórico com flag "conexão_caiu"
+  4. NÃO depender da ação manual do usuário para salvar
+
+
+────────────────────────────────────────────────────────────────────────────────
+B4. FLAG DE RECONEXÃO COM CONTEXTO SALVO
+────────────────────────────────────────────────────────────────────────────────
+
+VISÃO DO DESENVOLVEDOR:
+  "Quando uma conexão cai por QUALQUER motivo, tem que salvar e mostrar
+  que a conexão caiu, e uma flag acende internamente para que na primeira
+  reconexão (que NÃO vai ser automática — tem que clicar no botão) ele
+  pega o contexto da conversa que deu close."
+
+SITUAÇÃO ATUAL:
+  - NÃO existe flag de "última sessão caiu"
+  - NÃO existe mecanismo de "contexto pendente"
+  - App.tsx Linhas 100-106: handleStartCall já injeta último histórico
+    como contexto, MAS usa apenas as 3 conversas mais recentes do 
+    histórico geral, e só se useConversationContext estiver ativado
+  - Não diferencia "reconexão após queda" de "nova conversa"
+
+O QUE PRECISA SER IMPLEMENTADO:
+  
+  1. NOVA FLAG: sessionDroppedRef ou state sessionDropped
+     - Setada true quando onclose recebe código != 1000 (1000 = normal)
+     - Salva no localStorage: livego_session_dropped = true
+  
+  2. DADOS SALVOS NA QUEDA:
+     {
+       dropped: true,
+       timestamp: Date.now(),
+       transcript: "...(transcript até o momento da queda)...",
+       toolResults: [...(resultados de buscas]...,
+       closeCode: 1011,
+       closeReason: "...",
+       pendingGhostResults: [...(buscas que estavam em andamento)...]
+     }
+     localStorage key: livego_dropped_session
+  
+  3. NO PRÓXIMO CONNECT (handleStartCall no App.tsx):
+     - Verificar se livego_dropped_session existe
+     - Se sim: injetar o transcript + tool results como contexto na
+       system instruction, ex:
+       "[CONTEXTO DA SESSÃO ANTERIOR QUE CAIU]:
+        A conexão anterior foi interrompida. Aqui está o que foi
+        discutido: {transcript}
+        Resultados de pesquisa que chegaram: {toolResults}
+        Continue a conversa de onde parou."
+     - Limpar livego_dropped_session após injetar
+  
+  4. INDICAÇÃO VISUAL:
+     - Na HomeScreen, mostrar um aviso: "Sua última sessão foi
+       interrompida. Ao reconectar, o contexto será restaurado."
+     - Cor diferente no botão ou badge indicativo
+
+  5. FLUXO COMPLETO:
+     
+     [Sessão ativa] → [WebSocket fecha com erro] →
+     → onclose detecta code != 1000 →
+     → Salva transcript + toolResults + ghost pendentes no localStorage →
+     → Seta flag sessionDropped = true →
+     → UI mostra "Conexão caiu — clique para reconectar" →
+     → Usuário clica no botão →
+     → handleStartCall verifica flag →
+     → Injeta contexto salvo na system instruction →
+     → Nova sessão abre com todo o contexto →
+     → Gemini continua como se nada tivesse acontecido
+
+
+================================================================================
+BLOCO C — RECONEXÃO E RESILIÊNCIA
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+C1. ERRO 1008 POR RECONEXÃO SEM CLEANUP
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  Erro 1008 "Requested entity was not found" aparece quando:
+  - O frontend reconecta rápido demais após uma desconexão
+  - A sessão anterior não foi completamente limpa no servidor do Google
+  
+IMPORTANTE (Diretriz do desenvolvedor):
+  NÃO resolver removendo inputAudioTranscription ou outputAudioTranscription.
+  Essas configs são ESSENCIAIS para a transcrição ao vivo (legendas).
+
+CAUSA PROVÁVEL:
+  useLiveAPI.ts:
+  - Linha 147-151: disconnect() faz session.close() via .then() (async)
+    e imediatamente seta sessionPromiseRef = null
+  - Se o usuário clica em reconectar antes do session.close() completar,
+    duas sessões podem coexistir momentaneamente
+  - O servidor Google pode rejeitar a nova conexão com 1008
+
+O QUE CORRIGIR:
+  1. Adicionar cooldown mínimo entre disconnect e novo connect:
+     - Após disconnect(), esperar 1-2s antes de permitir novo connect
+     - Ou melhor: disconnect retorna Promise que resolve quando cleanup
+       está completo
+  2. Garantir que session.close() complete ANTES de permitir reconexão:
+     - Converter o .then() para await
+     - Ou usar flag "isCleaningUp" que bloqueia novo connect
+  3. Melhorar mensagem de diagnóstico no onclose:
+     - 1008 na Live API = "Sessão anterior não foi limpa corretamente"
+     - NÃO "API key inválida" (mensagem atual é enganosa)
+
+
+────────────────────────────────────────────────────────────────────────────────
+C2. RECONEXÃO MANUAL COM INJEÇÃO DE CONTEXTO
+────────────────────────────────────────────────────────────────────────────────
+
+SITUAÇÃO ATUAL DO handleStartCall (App.tsx, Linhas 89-109):
+  - Verifica API key
+  - Pega instrução ativa do presetsStore
+  - Se useConversationContext === true: adiciona últimas 3 conversas
+    do histórico como contexto na system instruction
+  - Chama connect() com a config
+
+O QUE FALTA:
+  1. Verificar se tem sessão derrubada (livego_dropped_session)
+  2. Se sim: injetar transcript + toolResults da sessão derrubada
+     PRIORITARIAMENTE (mais relevante que histórico antigo)
+  3. Incluir resultados de Ghost Search que chegaram DEPOIS da queda
+  4. Manter o histórico geral como contexto secundário
+
+FLUXO PROPOSTO para handleStartCall:
+  1. Verificar API key (existente)
+  2. Pegar instrução ativa (existente)
+  3. VERIFICAR se livego_dropped_session existe:
+     - Se SIM: montar contextWithHistory incluindo o transcript e
+       tool results da sessão derrubada + instrução para Gemini
+       "continuar de onde parou"
+     - Se NÃO: fluxo atual (últimas 3 conversas se habilitado)
+  4. Conectar com a config montada
+  5. Após conectar com sucesso: limpar livego_dropped_session
+
+
+================================================================================
+BLOCO D — PROBLEMAS MENORES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+D1. SpeechSynthesis CONFLITANTE (useLiveAPI.ts:520-529)
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  Quando ghost_search ou googleSearch é chamado, o código usa
+  window.speechSynthesis.speak("Um momento, pesquisando...").
+  
+  Isso pode:
+  a) Interferir com o áudio do Gemini (competem pelo output)
+  b) Ser captado pelo microfone e interpretado pelo Gemini como fala
+     do usuário (eco)
+  c) Não funcionar em mobile
+
+SUGESTÃO:
+  Com a solução de busca dual (A1), o Gemini MESMO pode dizer "estou
+  pesquisando" com sua própria voz, tornando o SpeechSynthesis
+  desnecessário. Considerar remover.
+
+
+────────────────────────────────────────────────────────────────────────────────
+D2. processAudioQueue FIRE-AND-FORGET (useLiveAPI.ts:486)
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  processAudioQueue(outputNode) é chamado sem await. Se der erro,
+  é engolido silenciosamente. Se o outputContext fechar durante o
+  processamento, pode acessar contexto fechado.
+
+SUGESTÃO:
+  Adicionar .catch(console.error) na chamada, ou verificar se
+  outputAudioContextRef.current ainda existe dentro do loop.
+
+
+────────────────────────────────────────────────────────────────────────────────
+D3. API KEY EXPOSTA (vite.config.ts:36-38 + useLiveAPI.ts:238)
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  A API key é injetada no bundle JS e visível no URL do WebSocket.
+  Qualquer usuário pode extraí-la do DevTools.
+
+NOTA: Para fase de desenvolvimento pode ser aceitável. Em produção,
+  considerar proxy backend que adicione a key server-side.
+
+
+────────────────────────────────────────────────────────────────────────────────
+D4. X-Frame-Options / Tailwind CDN (avisos do navegador)
+────────────────────────────────────────────────────────────────────────────────
+
+  - X-Frame-Options como meta tag é ineficaz (precisa ser HTTP header)
+  - Tailwind via CDN é para desenvolvimento, não produção
+  
+  Ambos são avisos cosméticos, não causam erros funcionais.
+
+
+================================================================================
+VERIFICAÇÃO DO CÓDIGO DE HISTÓRICO — ANÁLISE DETALHADA
+================================================================================
+
+O desenvolvedor pediu para verificar se o save/get histórico está
+"normal e regulado". Aqui está a análise:
+
+── SAVE HISTÓRICO ──
+
+  LOCALIZAÇÃO: App.tsx, Linhas 118-138 (handleEndCall)
+  
+  FLUXO:
+    1. Calcula duração (endTime - startTimeRef.current)
+    2. Verifica se transcript.trim().length > 0
+    3. Cria HistoryItem: { id, date, duration, transcript }
+    4. setHistory(prev => [newItem, ...prev])  ← prepend (mais recente 1º)
+    5. useEffect[history] persiste no localStorage
+    6. Chama disconnect()
+    7. Volta para HomeScreen
+
+  PROBLEMAS ENCONTRADOS:
+  
+    a) SÓ SALVA EM AÇÃO MANUAL: handleEndCall só é chamado pelo botão
+       "encerrar". Se a conexão cair, NADA é salvo. (Ver B1)
+    
+    b) NÃO INCLUI TOOL RESULTS: O histórico salva APENAS o transcript
+       de áudio. Resultados de ghost_search, fetch_page, show_image
+       são ignorados. (Ver B2)
+    
+    c) ORDEM: disconnect() é chamado DEPOIS de setHistory. Como
+       setHistory é assíncrono (useState), a persistência no localStorage
+       via useEffect pode não ter executado quando disconnect() limpa
+       tudo. Na prática, React batcha os updates, então geralmente
+       funciona, mas não é garantido.
+    
+    d) DATE FORMAT: Usa new Date().toLocaleString(locale), que gera
+       formato "16/01/2026, 23:08:13" em pt-BR. Na dataFunctions.ts,
+       parseBrazilianDate() parseia esse formato. FUNCIONA, mas é
+       frágil — muda se o locale mudar.
+
+── GET HISTÓRICO ──
+
+  LOCALIZAÇÃO: App.tsx, Linhas 48-56 (useState initial value)
+  
+  FLUXO:
+    1. No mount do App, lê localStorage.getItem(HISTORY_STORAGE_KEY)
+    2. JSON.parse → array de HistoryItem
+
+  LOCALIZAÇÃO: dataFunctions.ts, Linhas 303-326 (parseHistoryToEntries)
+  e Linhas 341-370 (getConversationHistory)
+  
+  FLUXO (para function calls do Gemini):
+    1. parseHistoryToEntries() lê localStorage
+    2. Converte para ConversationEntry com parseBrazilianDate()
+    3. getConversationHistory() filtra por período e emoção
+
+  PROBLEMAS ENCONTRADOS:
+  
+    a) CAMPOS OPCIONAIS NÃO EXISTEM: parseHistoryToEntries espera
+       item.emotion e item.intensity (linhas 316-317), mas o
+       HistoryItem criado no App.tsx NÃO tem esses campos:
+       
+       App.tsx cria:  { id, date, duration, transcript }
+       Parser espera: { id, date, duration, transcript, emotion, intensity }
+       
+       Resultado: emotion = undefined, intensity = undefined
+       IMPACTO: Filtros por emoção e estatísticas emocionais NUNCA
+       retornam dados úteis do histórico de conversas. Funcionam
+       apenas com notas emocionais salvas separadamente.
+    
+    b) DUPLICAÇÃO DE LÓGICa: App.tsx e dataFunctions.ts ambos leem
+       do mesmo localStorage key ('livego_history'), mas com parsers
+       diferentes. Se o formato mudar em um, o outro quebra.
+    
+    c) LIMIT DE 10: getConversationHistory retorna .slice(0, 10) —
+       no máximo 10 conversas. Se o usuário tiver centenas, o Gemini
+       só vê as 10 mais recentes filtradas.
+    
+    d) NO SEARCH RESULTS IN HISTORY: Quando o Gemini chama 
+       getConversationHistory ou searchConversationTopic, os resultados
+       NÃO incluem dados de buscas que foram feitas nas conversas.
+       Apenas o transcript de áudio é pesquisável.
+
+
+── PERSISTÊNCIA ──
+
+  LOCALIZAÇÃO: App.tsx, Linhas 61-67 (useEffect)
+  
+  FLUXO:
+    Toda vez que "history" muda, salva no localStorage.
+    
+  STATUS: FUNCIONA CORRETAMENTE para o fluxo manual (handleEndCall).
+  NÃO funciona para desconexões inesperadas (ver B1).
+
+
+================================================================================
+PRIORIDADE DE IMPLEMENTAÇÃO RECOMENDADA
+================================================================================
+
+  FASE 1 — PARAR DE PERDER DADOS (Bloqueantes):
+  ├─ B1. Salvar histórico quando conexão cai (não esperar handleEndCall)
+  ├─ B3. Auto-save periódico do transcript (a cada 30s)
+  └─ A2. Parar spam de áudio quando WebSocket fecha
+
+  FASE 2 — PERSISTÊNCIA INTELIGENTE:
+  ├─ B2. Incluir dados de tool calls (ghost_search) no histórico
+  ├─ B4. Flag de reconexão com contexto da sessão derrubada
+  └─ C2. Injetar contexto salvo na reconexão
+
+  FASE 3 — FLUXO DE TOOLS OTIMIZADO:
+  ├─ A1. Busca dual (Google nativo imediato + Ghost em background)
+  ├─ A3. Garantir que Ghost Search nunca é abortado prematuramente
+  └─ C1. Cooldown entre reconexões (evitar 1008)
+
+  FASE 4 — POLISH:
+  ├─ D1. Remover SpeechSynthesis (o Gemini fala sozinho)
+  ├─ D2. Tratar erros do processAudioQueue
+  ├─ D3. Avaliar proxy backend para API key
+  └─ D4. Limpar avisos do navegador
+
+
+================================================================================
+ESTRUTURA DE TIPOS SUGERIDA PARA O NOVO HISTORICO
+================================================================================
+
+  interface HistoryItem {
+    id: string;
+    date: string;
+    duration: string;
+    transcript: string;
+    // NOVOS CAMPOS:
+    toolResults?: ToolResult[];      // Resultados de buscas
+    closeReason?: 'manual' | 'error'; // Como a sessão terminou
+    closeCode?: number;               // Código de fechamento do WS
+    wasDropped?: boolean;             // Flag: conexão caiu?
+    searchQueries?: string[];         // Queries feitas durante sessão
+  }
+
+  interface ToolResult {
+    toolName: string;          // 'ghost_search', 'fetch_page', etc.
+    query: string;             // Query/args usados
+    timestamp: number;         // Quando foi chamado
+    answer?: string;           // Resposta resumida
+    citations?: Citation[];    // Referências
+    ok: boolean;               // Sucesso ou falha
+  }
+
+  interface DroppedSession {
+    dropped: true;
+    timestamp: number;
+    transcript: string;
+    toolResults: ToolResult[];
+    closeCode: number;
+    closeReason: string;
+    pendingGhostResults: any[]; // Buscas que ainda estavam em andamento
+  }
+
+
+================================================================================
+FIM DO PLANO DE MELHORIAS V2
+================================================================================

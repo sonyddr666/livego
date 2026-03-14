@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { ScreenName, HistoryItem } from './types';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import { ScreenName, HistoryItem, DroppedSession, ToolResult } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { UsageScreen } from './components/UsageScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -17,6 +17,8 @@ import { useSettingsStore } from './store/settingsStore';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
+const DROPPED_SESSION_KEY = 'livego_dropped_session';
+const ACTIVE_SESSION_KEY = 'livego_active_session';
 
 const App: React.FC = () => {
   const { t, locale } = useI18n();
@@ -56,6 +58,14 @@ const App: React.FC = () => {
   });
 
   const startTimeRef = useRef<number>(0);
+  const lastDisconnectRef = useRef<number>(0); // Cooldown: timestamp of last unexpected disconnect
+
+  // B4: Dropped session state
+  const [sessionDropped, setSessionDropped] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem(DROPPED_SESSION_KEY);
+    } catch { return false; }
+  });
 
   // Save history to localStorage whenever it changes
   useEffect(() => {
@@ -65,6 +75,113 @@ const App: React.FC = () => {
       console.error('Failed to save history to localStorage:', error);
     }
   }, [history]);
+
+  // B3: Check for abandoned active session on mount
+  useEffect(() => {
+    try {
+      const activeSession = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (activeSession && !localStorage.getItem(DROPPED_SESSION_KEY)) {
+        const session = JSON.parse(activeSession);
+        // If there's an active session snapshot but no dropped session flag,
+        // it means the app closed/crashed during a session
+        if (session.timestamp && (Date.now() - session.timestamp) < 24 * 60 * 60 * 1000) {
+          console.log('[App] Found abandoned active session, creating dropped session entry');
+          const droppedSession: DroppedSession = {
+            dropped: true,
+            timestamp: session.timestamp,
+            transcript: '',
+            toolResults: session.toolResults || [],
+            closeCode: 0,
+            closeReason: 'App closed during active session',
+            pendingGhostResults: [],
+            startTime: session.startTime || session.timestamp,
+          };
+          localStorage.setItem(DROPPED_SESSION_KEY, JSON.stringify(droppedSession));
+          setSessionDropped(true);
+        }
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      }
+    } catch (e) {
+      console.warn('[App] Failed to check active session:', e);
+    }
+  }, []);
+
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, getAnalysers } = useLiveAPI();
+
+  // B1: Handle unexpected disconnection — save everything
+  const handleUnexpectedDisconnect = useCallback((data: {
+    transcript: string;
+    toolResults: ToolResult[];
+    closeCode: number;
+    closeReason: string;
+  }) => {
+    console.log('[App] Unexpected disconnect! Saving session...', data.closeCode, data.closeReason);
+    
+    const endTime = Date.now();
+    const durationMs = endTime - startTimeRef.current;
+    const durationSec = Math.floor(durationMs / 1000);
+    const mins = Math.floor(durationSec / 60);
+    const secs = durationSec % 60;
+    const durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+    // Track disconnect time for cooldown
+    lastDisconnectRef.current = Date.now();
+
+    // Use transcript from the hook's state
+    const currentTranscript = transcript;
+
+    // Don't save dropped session if session lasted less than 5 seconds
+    // (sign of immediate 1008 rejection — saving context from these creates a loop)
+    const sessionTooShort = durationMs < 5000;
+    if (sessionTooShort) {
+      console.log('[App] Session lasted <5s — skipping dropped session save to prevent loop');
+      // Clean up any existing dropped session to break the loop
+      try {
+        localStorage.removeItem(DROPPED_SESSION_KEY);
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      } catch (e) { /* ignore */ }
+      setSessionDropped(false);
+      setCurrentScreen(ScreenName.HOME);
+      return;
+    }
+
+    // Save to history with dropped flag
+    if (currentTranscript.trim().length > 0 || data.toolResults.length > 0) {
+      const newItem: HistoryItem = {
+        id: Date.now().toString(),
+        date: new Date().toLocaleString(locale),
+        duration: durationStr,
+        transcript: currentTranscript,
+        toolResults: data.toolResults,
+        closeReason: 'error',
+        closeCode: data.closeCode,
+        wasDropped: true,
+      };
+      setHistory(prev => [newItem, ...prev]);
+    }
+
+    // Save dropped session for context injection on reconnect
+    const droppedSession: DroppedSession = {
+      dropped: true,
+      timestamp: Date.now(),
+      transcript: currentTranscript,
+      toolResults: data.toolResults.slice(0, 3), // Limit to 3 results
+      closeCode: data.closeCode,
+      closeReason: data.closeReason,
+      pendingGhostResults: [],
+      startTime: startTimeRef.current,
+    };
+    try {
+      localStorage.setItem(DROPPED_SESSION_KEY, JSON.stringify(droppedSession));
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch (e) {
+      console.error('[App] Failed to save dropped session:', e);
+    }
+    setSessionDropped(true);
+
+    // Navigate to home
+    setCurrentScreen(ScreenName.HOME);
+  }, [transcript, locale]);
 
   // Save API key to localStorage whenever it changes
   const handleApiKeyChange = (newApiKey: string) => {
@@ -80,8 +197,6 @@ const App: React.FC = () => {
     }
   };
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, getAnalysers } = useLiveAPI();
-
   const handleNavigate = (screen: ScreenName) => {
     setCurrentScreen(screen);
   };
@@ -92,6 +207,15 @@ const App: React.FC = () => {
       setCurrentScreen(ScreenName.ACCOUNT);
       return;
     }
+
+    // Cooldown: wait 3s after last unexpected disconnect
+    const timeSinceLastDisconnect = Date.now() - lastDisconnectRef.current;
+    if (lastDisconnectRef.current > 0 && timeSinceLastDisconnect < 3000) {
+      const waitTime = 3000 - timeSinceLastDisconnect;
+      console.log(`[App] Cooldown: waiting ${waitTime}ms before reconnecting...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
     startTimeRef.current = Date.now();
 
     // Get the active instruction from presets (or use fallback)
@@ -99,13 +223,56 @@ const App: React.FC = () => {
 
     // Build context from history if enabled
     let contextWithHistory = activeInstruction;
-    if (useConversationContext && history.length > 0) {
-      // Add last 3 conversations as context
-      const recentHistory = history.slice(0, 3).map(h => h.transcript).join('\n---\n');
-      contextWithHistory = `${activeInstruction}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
+
+    // B4: Check for dropped session — inject its context FIRST (most relevant)
+    try {
+      const droppedRaw = localStorage.getItem(DROPPED_SESSION_KEY);
+      if (droppedRaw) {
+        const dropped: DroppedSession = JSON.parse(droppedRaw);
+        console.log('[App] Restoring context from dropped session...');
+        
+        let droppedContext = '\n\n[CONTEXTO DA SESSAO ANTERIOR QUE FOI INTERROMPIDA]:\n';
+        
+        if (dropped.transcript) {
+          droppedContext += `Transcricao da conversa anterior:\n${dropped.transcript.substring(0, 2000)}\n\n`;
+        }
+
+        if (dropped.toolResults && dropped.toolResults.length > 0) {
+          droppedContext += 'Resultados de pesquisas da sessao anterior:\n';
+          for (const tr of dropped.toolResults.slice(0, 3)) {
+            droppedContext += `- [${tr.toolName}] "${tr.query}": ${tr.answer?.substring(0, 300) || 'sem resposta'}\n`;
+          }
+          droppedContext += '\n';
+        }
+
+        if (dropped.pendingGhostResults && dropped.pendingGhostResults.length > 0) {
+          droppedContext += 'Resultados de Ghost Search que chegaram DEPOIS da queda:\n';
+          for (const pr of dropped.pendingGhostResults.slice(0, 2)) {
+            droppedContext += `- "${pr.query}": ${pr.answer?.substring(0, 300) || 'sem resposta'}\n`;
+          }
+          droppedContext += '\n';
+        }
+
+        droppedContext += 'Continue a conversa naturalmente de onde parou. Nao mencione detalhes tecnicos da queda, apenas retome o assunto.';
+        
+        contextWithHistory = activeInstruction + droppedContext;
+
+        // Clean up dropped session after injecting
+        localStorage.removeItem(DROPPED_SESSION_KEY);
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+        setSessionDropped(false);
+      }
+    } catch (e) {
+      console.warn('[App] Failed to restore dropped session context:', e);
     }
 
-    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true, useConversationContext });
+    // Also add regular history context if enabled and no dropped session was found
+    if (useConversationContext && history.length > 0 && !contextWithHistory.includes('[CONTEXTO DA SESSAO ANTERIOR')) {
+      const recentHistory = history.slice(0, 3).map(h => h.transcript).join('\n---\n');
+      contextWithHistory = `${contextWithHistory}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
+    }
+
+    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true, useConversationContext, onUnexpectedDisconnect: handleUnexpectedDisconnect });
   };
 
   // Watch for connection state to transition screen
@@ -123,15 +290,24 @@ const App: React.FC = () => {
     const secs = durationSec % 60;
     const durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
-    if (transcript.trim().length > 0) {
+    if (transcript.trim().length > 0 || toolResults.length > 0) {
       const newItem: HistoryItem = {
         id: Date.now().toString(),
         date: new Date().toLocaleString(locale),
         duration: durationStr,
-        transcript: transcript
+        transcript: transcript,
+        toolResults: toolResults.length > 0 ? toolResults : undefined,
+        closeReason: 'manual',
       };
       setHistory(prev => [newItem, ...prev]);
     }
+
+    // Clean up any active session snapshot
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      localStorage.removeItem(DROPPED_SESSION_KEY);
+    } catch (e) { /* ignore */ }
+    setSessionDropped(false);
 
     disconnect();
     setCurrentScreen(ScreenName.HOME);
@@ -202,7 +378,8 @@ const App: React.FC = () => {
                 ScreenName.ABOUT,
                 ScreenName.VOICE,
                 ScreenName.INSTRUCTIONS,
-                ScreenName.LANGUAGE
+                ScreenName.LANGUAGE,
+                ScreenName.SKILLS
               ].includes(currentScreen) && (
                   <SettingsDetailScreen
                     screen={currentScreen}

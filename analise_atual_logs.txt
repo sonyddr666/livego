@@ -1,0 +1,24 @@
+# Situação Atual do LiveGo - Análise de Logs (13/03/2026)
+
+Com base nos logs mais recentes fornecidos, aqui está o resumo exato da nossa situação atual e os problemas enfrentados:
+
+## O que está FUNCIONANDO:
+1. Conexão Inicial e Microfone: A WebSocket abre com sucesso (`Live Session Opened`), o AudioContext roda normalmente e as transcrições estão habilitadas corretamente.
+2. Reconhecimento de Tools: O Gemini consegue reconhecer a intenção de usar o Ghost Search e envia os parâmetros. 
+3. Backend Ghost Search: O serviço em `localhost:3000/api/ghost/search` está respondendo em alguns testes (ex: `HTTP 200 | Time: 36.1s | Body: 9158`).
+
+---
+
+## Os Problemas Atuais A Serem Resolvidos:
+
+### Problema 1: Erro 1011 Server Error (Timeout do Gemini na Tool)
+**Sintoma:** `Close code: 1011 / Close reason: Thread was cancelled...`
+**Causa:** Nossa ferramenta `ghost_search` executou por 36 segundos com sucesso. O problema é que a API do Google Gemini (no servidor deles) não espera tanto tempo por uma resposta de tool e abortou/cancelou ("Thread was cancelled") nossa sessão internamente no meio da espera.
+
+### Problema 2: Envio em WebSocket Fechado (`CLOSING or CLOSED state`)
+**Sintoma:** `useLiveAPI.ts:392 WebSocket is already in CLOSING or CLOSED state.`
+**Causa:** É a consequência do Problema 1. Como o servidor do Google derrubou a conexão nos 36 segundos de espera do Ghost Search, quando a resposta do Ghost Search chega e nosso frontend tenta devolvê-la (`session.sendToolResponse`), a porta já está trancada e dá erro.
+
+### Problema 3: Erro 1008 Intermitente (`Requested entity was not found`)
+**Sintoma:** `Close code: 1008 / Close reason: Requested entity was not found.`
+**Causa:** Quedas aleatórias da API logo após a conexão. Pode ser instabilidade no SDK Live da Google quando atrelado com as definições complexas das tools + áudio nativo. A API falha em achar a "entidade" de resposta de áudio ou de history.

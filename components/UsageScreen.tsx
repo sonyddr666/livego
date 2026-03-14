@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef, memo } from 'react';
 import { Visualizer } from './Visualizer';
 import { IconMic, IconMicOff, IconPhoneOff, IconVolume2, IconSettings } from './Icons';
+import { ImageOverlay } from './ImageOverlay';
 import { useI18n } from '../i18n';
 
 interface UsageScreenProps {
@@ -59,6 +60,9 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
 
       {/* Ambient Background */}
       <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-gradient-to-br from-indigo-900/30 via-black to-blue-900/20 blur-3xl pointer-events-none" />
+
+      {/* Image Overlay — show_image skill */}
+      <ImageOverlay />
 
       {/* Header */}
       <div className="flex justify-between items-center px-8 pt-12 pb-6 relative z-10">

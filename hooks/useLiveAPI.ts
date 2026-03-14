@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai';
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
-import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow } from '../types';
+import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow, ToolResult } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
 import { calculateRMSVolume, createEnhancementChain } from '../utils/audioEnhancement';
 import { useSettingsStore } from '../store/settingsStore';
+import { buildFunctionDeclarations } from '../store/skillsStore';
 
 // Audio constants
 const AUDIO_CONFIG = {
@@ -68,6 +69,7 @@ interface UseLiveAPIResult {
   transcript: string;
   config: LiveConfig | null;
   audioCtx: AudioContext | null;
+  toolResults: ToolResult[];
   connect: (config: LiveConfig) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
@@ -110,11 +112,25 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const isProcessingToolRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
 
+  // Tool results and auto-save tracking
+  const toolResultsRef = useRef<ToolResult[]>([]);
+  const pendingGhostResultsRef = useRef<ToolResult[]>([]);
+  const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const configRef = useRef<LiveConfig | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const [toolResults, setToolResults] = useState<ToolResult[]>([]);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
   const disconnect = useCallback(() => {
+    // Stop auto-save interval
+    if (autoSaveIntervalRef.current) {
+      clearInterval(autoSaveIntervalRef.current);
+      autoSaveIntervalRef.current = null;
+    }
+
     if (audioWorkletNodeRef.current) {
       audioWorkletNodeRef.current.port.onmessage = null; // Clean up the port listener to stop spam
       audioWorkletNodeRef.current.disconnect();
@@ -301,6 +317,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       nextStartTimeRef.current = 0;
       setTranscript('');
       currentSpeakerRef.current = null;
+      toolResultsRef.current = [];
+      pendingGhostResultsRef.current = [];
+      setToolResults([]);
+      startTimeRef.current = Date.now();
+      configRef.current = config;
 
       console.log('[DEBUG] Requesting microphone permission...');
       let stream: MediaStream;
@@ -314,14 +335,20 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         throw micError;
       }
 
-      // Build tools array based on config and search mode
+      // Build tools array based on config, search mode, and enabled skills
       const searchMode = useSettingsStore.getState().searchMode;
       const tools: any[] = [];
 
       if (config.enableAdvancedFeatures) {
-        // Native audio models do not currently support functionDeclarations, only googleSearch
         if (searchMode === 'google') {
           tools.push({ googleSearch: {} });
+        }
+
+        // Add function declarations from enabled skills
+        const skillDeclarations = buildFunctionDeclarations();
+        if (skillDeclarations.length > 0) {
+          tools.push({ functionDeclarations: skillDeclarations });
+          console.log('[Skills] Registered', skillDeclarations.length, 'function declarations:', skillDeclarations.map(d => d.name));
         }
       }
 
@@ -335,6 +362,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             setConnected(true);
             isConnectedRef.current = true;
             setIsConnecting(false); // Stop loading
+
+            // B3: Auto-save transcript every 30s
+            if (autoSaveIntervalRef.current) clearInterval(autoSaveIntervalRef.current);
+            autoSaveIntervalRef.current = setInterval(() => {
+              try {
+                // Save raw refs since we can't read React state in interval
+                localStorage.setItem('livego_active_session', JSON.stringify({
+                  timestamp: Date.now(),
+                  startTime: startTimeRef.current,
+                  toolResults: toolResultsRef.current,
+                }));
+              } catch (e) {
+                console.warn('[AutoSave] Failed:', e);
+              }
+            }, 30000);
 
             if (!inputAudioContextRef.current) {
               console.error("[DEBUG] ERROR: inputAudioContext is null at onopen!");
@@ -382,7 +424,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               const pcmBlob = createPcmBlob(dataToSend, nativeSampleRate);
               sessionPromise.then((session: any) => {
                 if (isConnectedRef.current) {
-                  session.sendRealtimeInput({ media: pcmBlob });
+                  try {
+                    session.sendRealtimeInput({ media: pcmBlob });
+                  } catch (e) {
+                    // WebSocket entering CLOSING state — stop sending silently
+                    isConnectedRef.current = false;
+                  }
                 }
               });
             };
@@ -509,20 +556,87 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                       for (const call of functionCalls) {
                         console.log('[Tool] Function called:', call.name, call.args);
 
-                        // Implement audible TTS feedback when a search starts
-                        if (call.name === 'ghost_search' || call.name === 'googleSearch') {
-                          try {
-                            const utterance = new SpeechSynthesisUtterance("Um momento, pesquisando...");
-                            utterance.lang = "pt-BR";
-                            utterance.rate = 1.3;
-                            window.speechSynthesis.speak(utterance);
-                          } catch (e) {
-                            console.warn("[DEBUG] Could not play TTS feedback", e);
-                          }
+                        // A1: GHOST SEARCH — Busca dual (resposta imediata + background)
+                        if (call.name === 'ghost_search') {
+                          console.log('[Tool] Ghost Search: responding immediately, running in background');
+                          
+                          // 1. Respond IMMEDIATELY to Gemini (avoids 1011 timeout)
+                          const immediateResponse = {
+                            ok: true,
+                            status: 'searching_in_background',
+                            message: 'Busca profunda do Ghost Search iniciada em background. ' +
+                              'Enquanto o resultado completo nao chega, use sua busca nativa do Google ' +
+                              'para dar uma resposta rapida ao usuario. Quando o Ghost Search terminar, ' +
+                              'informe o usuario que tem informacoes mais detalhadas disponiveis. ' +
+                              'Pergunte se ele quer ouvir o resultado completo.',
+                            query: (call.args as any)?.query || '',
+                          };
+                          
+                          functionResponses.push({
+                            id: call.id || '',
+                            name: call.name || '',
+                            response: immediateResponse
+                          });
+
+                          // 2. Start ghost_search in background (NO await)
+                          const ghostCallArgs = call.args as any;
+                          handleToolCall(call as FunctionCall).then((ghostResult) => {
+                            console.log('[Tool] Ghost Search background result arrived:', ghostResult?.ok);
+                            
+                            // B2: Save tool result
+                            const toolResult: ToolResult = {
+                              toolName: 'ghost_search',
+                              query: ghostCallArgs?.query || '',
+                              timestamp: Date.now(),
+                              answer: ghostResult?.answer?.substring(0, 2000) || '',
+                              citations: ghostResult?.citations || [],
+                              ok: ghostResult?.ok || false,
+                            };
+                            toolResultsRef.current.push(toolResult);
+                            setToolResults([...toolResultsRef.current]);
+
+                            if (isConnectedRef.current && sessionPromiseRef.current) {
+                              // Session still alive — save as pending for the next interaction
+                              pendingGhostResultsRef.current.push(toolResult);
+                              console.log('[Tool] Ghost result saved as pending. Count:', pendingGhostResultsRef.current.length);
+                            } else {
+                              // Session dropped — save to localStorage for next reconnection
+                              console.log('[Tool] Session closed. Saving ghost result to dropped session.');
+                              try {
+                                const existing = localStorage.getItem('livego_dropped_session');
+                                if (existing) {
+                                  const session = JSON.parse(existing);
+                                  session.pendingGhostResults = session.pendingGhostResults || [];
+                                  session.pendingGhostResults.push(toolResult);
+                                  localStorage.setItem('livego_dropped_session', JSON.stringify(session));
+                                }
+                              } catch (e) {
+                                console.warn('[Tool] Failed to save ghost result to dropped session:', e);
+                              }
+                            }
+                          }).catch((err) => {
+                            console.error('[Tool] Ghost Search background error:', err);
+                          });
+
+                          continue; // Skip normal await flow for ghost_search
                         }
 
-                        // Handle the actual function execution
+                        // All other tools: normal synchronous flow
                         const result = await handleToolCall(call as FunctionCall);
+                        
+                        // B2: Save tool result to history
+                        if (call.name === 'fetch_page' || call.name === 'show_image') {
+                          const toolResult: ToolResult = {
+                            toolName: call.name || '',
+                            query: (call.args as any)?.url || (call.args as any)?.query || '',
+                            timestamp: Date.now(),
+                            answer: result?.contentPreview?.substring(0, 500) || result?.message || '',
+                            ok: result?.ok || false,
+                          };
+                          toolResultsRef.current.push(toolResult);
+                          setToolResults([...toolResultsRef.current]);
+                        }
+
                         functionResponses.push({
                           id: call.id || '',
                           name: call.name || '',
@@ -530,7 +644,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         });
                       }
 
-                      if (isConnectedRef.current && sessionPromiseRef.current) {
+                      if (functionResponses.length > 0 && isConnectedRef.current && sessionPromiseRef.current) {
                         console.log('[Tool] sending response:', functionResponses[0]);
                         const session = await sessionPromiseRef.current;
                         session.sendToolResponse({
@@ -554,12 +668,31 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             console.log("[DEBUG] Was clean:", event?.wasClean);
             console.log("[DEBUG] Close event:", event);
             console.log("[DEBUG] AudioContext state at close:", inputAudioContextRef.current?.state);
-            // Common codes: 1000=normal, 1008=policy violation (bad key), 1011=server error/quota
+
+            // A2: IMMEDIATELY stop audio pipeline to prevent WebSocket spam
+            isConnectedRef.current = false;
+            if (audioWorkletNodeRef.current) {
+              audioWorkletNodeRef.current.port.onmessage = null;
+            }
+
+            // Common codes: 1000=normal, 1008=session not found, 1011=server error/quota
             if (event?.code === 1011) {
               console.error("[DEBUG] Server error — check API quota, model access, or setup message format");
             } else if (event?.code === 1008) {
-              console.error("[DEBUG] Policy violation — likely invalid or unauthorized API key");
+              console.error("[DEBUG] Session not found — previous session was not cleaned up properly");
             }
+
+            // B1: If connection dropped unexpectedly (not normal close), save everything
+            if (event?.code !== 1000 && configRef.current?.onUnexpectedDisconnect) {
+              console.log('[DEBUG] Unexpected disconnect detected. Saving session data...');
+              configRef.current.onUnexpectedDisconnect({
+                transcript: '', // App.tsx reads from the hook's transcript state
+                toolResults: [...toolResultsRef.current],
+                closeCode: event?.code || 0,
+                closeReason: event?.reason || 'Unknown',
+              });
+            }
+
             disconnect();
           },
           onerror: (err: any) => {
@@ -570,13 +703,15 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           }
         },
         config: {
-          responseModalities: [Modality.AUDIO],
           systemInstruction: config.enableAdvancedFeatures
             ? buildAdvancedSystemInstruction(config.systemInstruction, config.useConversationContext)
             : config.systemInstruction,
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } }
           },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           ...(tools.length > 0 && { tools })
         }
       });
@@ -607,6 +742,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     transcript,
     config: currentConfig,
     audioCtx: outputAudioContextRef.current,
+    toolResults,
     getAnalysers: getAnalyser,
     connect,
     disconnect,
