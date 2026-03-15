@@ -70,7 +70,7 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({
         <div className="relative group">
           {/* Pulse Ring - only in light mode */}
           {!isConnecting && (
-            <div className="absolute inset-0 bg-blue-500/20 dark:bg-white/10 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-500 animate-pulse-ring" />
+            <div className="absolute inset-0 bg-blue-500/20 dark:bg-white/10 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-500 animate-pulse-ring pointer-events-none" />
           )}
 
           <button
@@ -88,9 +88,9 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({
               } 
                 ${!hasApiKey ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
             `}
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           >
-            {/* Hover glow overlay for dark mode */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-300/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 dark:block hidden" />
+            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-300/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 dark:block hidden pointer-events-none" />
 
             {isConnecting ? (
               <div className="relative">
