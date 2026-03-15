@@ -75,23 +75,26 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({
 
           <button
             onClick={onStartCall}
+            onTouchEnd={(e) => {
+              // Fallback for Android where onClick may not fire on complex layered buttons
+              if (!isConnecting && hasApiKey) {
+                e.preventDefault();
+                onStartCall();
+              }
+            }}
             disabled={isConnecting || !hasApiKey}
             aria-label={isConnecting ? 'Connecting' : t('home.tapToSpeak')}
-            className={`group relative flex items-center justify-center rounded-full transition-all duration-300 transform
+            className={`relative flex items-center justify-center rounded-full transition-all duration-300
                 ${isConnecting
                 ? 'w-40 h-40 bg-theme-secondary border-4 border-theme cursor-wait'
-                : `w-40 h-40 hover:scale-105 active:scale-95
-                     /* Light Mode: Gradient Blue */
+                : `w-40 h-40 hover:scale-105
                      bg-gradient-to-br from-[#4353FF] to-[#2F80ED] shadow-lg shadow-blue-500/30
-                     /* Dark Mode: Glassmorphism */
                      dark:bg-white/10 dark:backdrop-blur-md dark:border dark:border-white/20 dark:shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] dark:hover:bg-white/20 dark:hover:border-white/40 dark:from-transparent dark:to-transparent`
               } 
                 ${!hasApiKey ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
             `}
             style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           >
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-300/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 dark:block hidden pointer-events-none" />
-
             {isConnecting ? (
               <div className="relative">
                 <div className="w-12 h-12 border-4 border-theme border-t-indigo-600 dark:border-t-white rounded-full animate-spin" />

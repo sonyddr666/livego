@@ -144,6 +144,21 @@
             padding: 0;
             overflow: hidden;
             transition: background-color 0.3s ease, color 0.3s ease;
+            /* Mobile: prevent 300ms tap delay + remove blue flash */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Mobile viewport height fallback (dvh not supported on older Android) */
+        .h-dvh-safe {
+            height: 100vh;
+            height: 100dvh;
+        }
+
+        /* Ensure buttons are always tappable on mobile */
+        button, [role="button"] {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* Theme Utility Classes */

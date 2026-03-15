@@ -327,7 +327,7 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="w-full h-[100dvh] md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary font-sans">
+      <div className="w-full h-dvh-safe md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary font-sans">
         {/* 
           Responsive Container:
           - Mobile: Full screen, no padding, no border, no radius
