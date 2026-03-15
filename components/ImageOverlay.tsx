@@ -42,8 +42,9 @@ export const ImageOverlay: React.FC = () => {
 
       let imageUrl: string | null = null;
 
-      // Check if query is already a URL
-      if (query.startsWith('http://') || query.startsWith('https://')) {
+      // Check if query is already a URL or source is explicitly 'url'
+      const sourceType = detail.source || 'search';
+      if (sourceType === 'url' || query.startsWith('http://') || query.startsWith('https://')) {
         imageUrl = query;
       } else {
         // Search for an image

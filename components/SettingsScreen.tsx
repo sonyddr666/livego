@@ -347,6 +347,29 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                             </span>
                         </div>
                     </button>
+                    {/* Screen Vision FPS Slider */}
+                    <div className="w-full p-4 border-t border-theme">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex flex-col">
+                                <span className="text-theme-primary font-medium">Taxa de Captura de Tela</span>
+                                <span className="text-xs text-theme-secondary">Mais FPS = melhor para conteúdo dinâmico</span>
+                            </div>
+                            <span className="text-sm font-bold text-blue-500">{useSettingsStore.getState().screenVisionFps} FPS</span>
+                        </div>
+                        <input
+                            type="range"
+                            min={0.5}
+                            max={5}
+                            step={0.5}
+                            value={useSettingsStore.getState().screenVisionFps}
+                            onChange={(e) => useSettingsStore.getState().setScreenVisionFps(parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-theme-tertiary rounded-full appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <div className="flex justify-between mt-1">
+                            <span className="text-[10px] text-theme-muted">0.5</span>
+                            <span className="text-[10px] text-theme-muted">5</span>
+                        </div>
+                    </div>
                 </SettingsGroup>
 
                 <SettingsGroup title={t('settings.section.general')}>

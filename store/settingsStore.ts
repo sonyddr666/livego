@@ -11,6 +11,9 @@ interface SettingsState {
     searchMode: SearchMode;
     setSearchMode: (mode: SearchMode) => void;
     toggleSearchMode: () => void;
+    // Screen vision capture FPS (0.5–5, default 1)
+    screenVisionFps: number;
+    setScreenVisionFps: (fps: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -23,6 +26,8 @@ export const useSettingsStore = create<SettingsState>()(
             toggleSearchMode: () => set((state) => ({
                 searchMode: state.searchMode === 'google' ? 'ghost' : 'google'
             })),
+            screenVisionFps: 1,
+            setScreenVisionFps: (fps: number) => set({ screenVisionFps: fps }),
         }),
         {
             name: 'livego-settings'

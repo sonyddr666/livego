@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, memo } from 'react';
 import { Visualizer } from './Visualizer';
-import { IconMic, IconMicOff, IconPhoneOff, IconVolume2, IconSettings } from './Icons';
+import { IconMic, IconMicOff, IconPhoneOff, IconVolume2, IconSettings, IconMonitor } from './Icons';
 import { ImageOverlay } from './ImageOverlay';
 import { useI18n } from '../i18n';
 
@@ -12,6 +12,8 @@ interface UsageScreenProps {
   toggleSpeaker: () => void;
   caption: string;
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
+  isScreenSharing: boolean;
+  toggleScreenShare: () => void;
 }
 
 const UsageScreenComponent: React.FC<UsageScreenProps> = ({
@@ -21,7 +23,9 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
   isSpeakerOn,
   toggleSpeaker,
   caption,
-  getAnalysers
+  getAnalysers,
+  isScreenSharing,
+  toggleScreenShare
 }) => {
   const { t } = useI18n();
   const [seconds, setSeconds] = useState(0);
@@ -145,11 +149,26 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
             aria-pressed={isSpeakerOn}
             className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isSpeakerOn ? 'text-blue-400' : 'text-white'}`}
           >
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isSpeakerOn ? 'bg-blue-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
-              <IconVolume2 className="w-6 h-6" />
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isSpeakerOn ? 'bg-blue-500/10' : 'bg-white/5 hover:bg-white/10'}`}>
+              <IconVolume2 className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">
               {isSpeakerOn ? t('usage.speaker') : t('usage.speakerMuted')}
+            </span>
+          </button>
+
+          {/* Screen Share Toggle */}
+          <button
+            onClick={toggleScreenShare}
+            aria-label={isScreenSharing ? 'Stop screen share' : 'Start screen share'}
+            aria-pressed={isScreenSharing}
+            className={`flex flex-col items-center gap-1.5 transition-all active:scale-95 ${isScreenSharing ? 'text-green-400' : 'text-white'}`}
+          >
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isScreenSharing ? 'bg-green-500/15 animate-pulse' : 'bg-white/5 hover:bg-white/10'}`}>
+              <IconMonitor className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-medium tracking-wide uppercase opacity-60">
+              {isScreenSharing ? 'Tela On' : 'Tela'}
             </span>
           </button>
 

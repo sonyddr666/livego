@@ -3,9 +3,11 @@ import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow, ToolResult } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
-import { calculateRMSVolume, createEnhancementChain } from '../utils/audioEnhancement';
+import { createEnhancementChain } from '../utils/audioEnhancement';
 import { useSettingsStore } from '../store/settingsStore';
 import { buildFunctionDeclarations } from '../store/skillsStore';
+import { ScreenCapture } from '../utils/screenCapture';
+import { showToast } from '../components/Toast';
 
 // Audio constants
 const AUDIO_CONFIG = {
@@ -70,10 +72,12 @@ interface UseLiveAPIResult {
   config: LiveConfig | null;
   audioCtx: AudioContext | null;
   toolResults: ToolResult[];
+  isScreenSharing: boolean;
   connect: (config: LiveConfig) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
   toggleSpeaker: () => void;
+  toggleScreenShare: () => void;
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
@@ -84,11 +88,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [volume, setVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
+  const transcriptRef = useRef('');
   const [currentConfig, setCurrentConfig] = useState<LiveConfig | null>(null);
 
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const sessionPromiseRef = useRef<Promise<Session> | null>(null);
+  const sessionRef = useRef<any>(null); // Direct session ref for synchronous access (no .then() race)
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
 
@@ -105,6 +111,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   // Audio queue for smooth playback (Google recommended architecture)
   const audioQueueRef = useRef<string[]>([]);
   const isProcessingQueueRef = useRef(false);
+  const isInterruptedRef = useRef(false);
+  const audioChunkCountRef = useRef(0); // Debug: count audio chunks sent
 
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
@@ -116,15 +124,27 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const toolResultsRef = useRef<ToolResult[]>([]);
   const pendingGhostResultsRef = useRef<ToolResult[]>([]);
   const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configRef = useRef<LiveConfig | null>(null);
   const startTimeRef = useRef<number>(0);
   const [toolResults, setToolResults] = useState<ToolResult[]>([]);
+
+  // Screen share state
+  const screenCaptureRef = useRef<ScreenCapture | null>(null);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
   const disconnect = useCallback(() => {
+    // Stop screen capture if active
+    if (screenCaptureRef.current) {
+      screenCaptureRef.current.stop();
+      screenCaptureRef.current = null;
+    }
+    setIsScreenSharing(false);
+
     // Stop auto-save interval
     if (autoSaveIntervalRef.current) {
       clearInterval(autoSaveIntervalRef.current);
@@ -172,11 +192,69 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     setVolume(0);
     setIsMuted(false);
     currentSpeakerRef.current = null;
+    // Don't reset transcript here — it's needed for history save
+    // transcriptRef.current is reset when starting a new connection
   }, []);
 
   const toggleMute = useCallback(() => {
     setIsMuted(prev => !prev);
   }, []);
+
+  // Screen share: start/stop/toggle
+  const startScreenShare = useCallback(async () => {
+    if (screenCaptureRef.current?.isActive()) {
+      console.log('[ScreenShare] Already active');
+      return;
+    }
+
+    const fps = useSettingsStore.getState().screenVisionFps;
+    const capture = new ScreenCapture();
+
+    capture.onFrame = (base64: string) => {
+      const session = sessionRef.current;
+      if (!isConnectedRef.current || !session) return;
+      try {
+        session.sendRealtimeInput({
+          media: { data: base64, mimeType: 'image/jpeg' }
+        });
+      } catch (e) {
+        isConnectedRef.current = false;
+      }
+    };
+
+    capture.onEnded = () => {
+      console.log('[ScreenShare] Ended by user/browser');
+      screenCaptureRef.current = null;
+      setIsScreenSharing(false);
+    };
+
+    try {
+      await capture.start(fps);
+      screenCaptureRef.current = capture;
+      setIsScreenSharing(true);
+      console.log(`[ScreenShare] Started at ${fps} FPS`);
+    } catch (err: any) {
+      console.error('[ScreenShare] Failed to start:', err?.name, err?.message);
+      // User denied or not supported — don't break anything
+    }
+  }, []);
+
+  const stopScreenShare = useCallback(() => {
+    if (screenCaptureRef.current) {
+      screenCaptureRef.current.stop();
+      screenCaptureRef.current = null;
+    }
+    setIsScreenSharing(false);
+    console.log('[ScreenShare] Stopped by user');
+  }, []);
+
+  const toggleScreenShare = useCallback(() => {
+    if (screenCaptureRef.current?.isActive()) {
+      stopScreenShare();
+    } else {
+      startScreenShare();
+    }
+  }, [startScreenShare, stopScreenShare]);
 
   const toggleSpeaker = useCallback(() => {
     setIsSpeakerOn(prev => {
@@ -192,12 +270,19 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   // Async playback loop - processes audio queue without blocking onmessage
   const processAudioQueue = useCallback(async (outputNode: GainNode) => {
     const ctx = outputAudioContextRef.current;
-    if (!ctx) {
+    if (!ctx || !isConnectedRef.current) {
       isProcessingQueueRef.current = false;
       return;
     }
 
     while (audioQueueRef.current.length > 0) {
+      // Fix 1: Check interrupt flag before processing each chunk
+      if (isInterruptedRef.current) {
+        console.log('[Interrupt] processAudioQueue halted — queue cleared');
+        audioQueueRef.current = [];
+        break;
+      }
+
       const base64Audio = audioQueueRef.current.shift();
       if (!base64Audio) continue;
 
@@ -213,6 +298,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         // Resample to system's native sample rate if different
         if (ctx.sampleRate !== AUDIO_CONFIG.OUTPUT_SAMPLE_RATE) {
           audioBuffer = await resampleAudioBuffer(audioBuffer, ctx.sampleRate);
+        }
+
+        // Re-check interrupt after async decode (race condition guard)
+        if (isInterruptedRef.current) {
+          console.log('[Interrupt] processAudioQueue halted after decode');
+          audioQueueRef.current = [];
+          break;
         }
 
         // Schedule playback
@@ -359,24 +451,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           onopen: () => {
             console.log("[DEBUG] Live Session Opened - WebSocket connected");
             console.log("[DEBUG] AudioContext state at onopen:", inputAudioContextRef.current?.state);
+            
+            // Reset transcript for new session
+            setTranscript('');
+            transcriptRef.current = '';
+
+            // Auto-save is now handled via debounce in setTranscript
+            // (fires 3s after last transcript change)
             setConnected(true);
             isConnectedRef.current = true;
             setIsConnecting(false); // Stop loading
 
-            // B3: Auto-save transcript every 30s
-            if (autoSaveIntervalRef.current) clearInterval(autoSaveIntervalRef.current);
-            autoSaveIntervalRef.current = setInterval(() => {
-              try {
-                // Save raw refs since we can't read React state in interval
-                localStorage.setItem('livego_active_session', JSON.stringify({
-                  timestamp: Date.now(),
-                  startTime: startTimeRef.current,
-                  toolResults: toolResultsRef.current,
-                }));
-              } catch (e) {
-                console.warn('[AutoSave] Failed:', e);
-              }
-            }, 30000);
+            // Cache session synchronously for sendAudioChunk/onFrame (avoids .then() race)
+            sessionPromiseRef.current?.then((s: any) => { sessionRef.current = s; });
+
+            // (auto-save debounce moved to transcript handler)
 
             if (!inputAudioContextRef.current) {
               console.error("[DEBUG] ERROR: inputAudioContext is null at onopen!");
@@ -402,36 +491,39 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             // Fallback variable for ScriptProcessor
             let scriptProcessorNode: ScriptProcessorNode | null = null;
 
-            // Send audio continuously, but drop pure silence/noise to prevent API overwhelm
+            // Send audio continuously
             const sendAudioChunk = (inputData: Float32Array) => {
-              if (!isConnectedRef.current) {
+              const session = sessionRef.current;
+              if (!isConnectedRef.current || !session) {
                 return;
+              }
+
+              // Debug: log mic activity every 100 chunks (~3s) to confirm audio pipeline is alive
+              audioChunkCountRef.current++;
+              if (audioChunkCountRef.current % 100 === 0) {
+                console.log(`[Mic] Chunk #${audioChunkCountRef.current} sent | muted=${isMutedRef.current} | queue=${audioQueueRef.current.length} | sources=${sourcesRef.current.size}`);
               }
 
               // CRITICAL: We cannot simply `return;` here, because skipping chunks corrupts the
               // PCM timeline and makes the audio sound scrambled to Gemini. 
               // Instead, we zero out the data to send pure digital silence.
               let dataToSend = inputData;
-              const rms = calculateRMSVolume(inputData);
 
-              // Send silence if muted, processing a tool, or background noise is low
-              if (isMutedRef.current || isProcessingToolRef.current || rms < 0.008) {
+              // Send silence if muted
+              // NOTE: Noise gate removed — trust Gemini's server-side VAD for speech detection
+              if (isMutedRef.current) {
                 dataToSend = new Float32Array(inputData.length); // Pure silence
               }
 
               // Pass the native sample rate for automatic resampling to 16kHz
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
               const pcmBlob = createPcmBlob(dataToSend, nativeSampleRate);
-              sessionPromise.then((session: any) => {
-                if (isConnectedRef.current) {
-                  try {
-                    session.sendRealtimeInput({ media: pcmBlob });
-                  } catch (e) {
-                    // WebSocket entering CLOSING state — stop sending silently
-                    isConnectedRef.current = false;
-                  }
-                }
-              });
+              try {
+                session.sendRealtimeInput({ media: pcmBlob });
+              } catch (e) {
+                // WebSocket entering CLOSING state — stop sending silently
+                isConnectedRef.current = false;
+              }
             };
 
             // Check if we registered AudioWorklet successfully earlier
@@ -485,8 +577,16 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             if (msgAny.serverContent?.groundingMetadata) {
               console.log('[Search] Google grounding (serverContent):', msgAny.serverContent.groundingMetadata);
             }
-            // Uncomment below to see ALL messages:
-            // console.log('[Live] message:', message);
+
+            // Debug: Log message types to diagnose interrupt issues
+            const hasAudio = !!message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            const hasInterrupted = !!message.serverContent?.interrupted;
+            const hasInputTranscription = !!message.serverContent?.inputTranscription;
+            const hasOutputTranscription = !!message.serverContent?.outputTranscription;
+            const hasToolCall = !!(message as any).toolCall;
+            if (hasInterrupted || hasInputTranscription || hasToolCall) {
+              console.log(`[Live] msg: audio=${hasAudio} interrupted=${hasInterrupted} inputTx=${hasInputTranscription} outputTx=${hasOutputTranscription} toolCall=${hasToolCall}`);
+            }
 
             // Handle Input Transcription (User)
             if (message.serverContent?.inputTranscription) {
@@ -496,7 +596,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 currentSpeakerRef.current = 'user';
                 setTranscript(prev => {
                   const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'User: ' : '';
-                  return prev + prefix + text;
+                  const next = prev + prefix + text;
+                  transcriptRef.current = next;
+                  // Debounce auto-save: save 3s after last transcript change
+                  if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                  debounceTimerRef.current = setTimeout(() => {
+                    try {
+                      localStorage.setItem('livego_active_session', JSON.stringify({
+                        transcript: transcriptRef.current,
+                        toolResults: toolResultsRef.current,
+                        timestamp: Date.now(),
+                        startTime: startTimeRef.current,
+                      }));
+                    } catch (e) { /* ignore */ }
+                  }, 3000);
+                  return next;
                 });
               }
             }
@@ -509,7 +623,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 currentSpeakerRef.current = 'gemini';
                 setTranscript(prev => {
                   const prefix = isNewTurn ? (prev.length > 0 ? '\n' : '') + 'Gemini: ' : '';
-                  return prev + prefix + text;
+                  const next = prev + prefix + text;
+                  transcriptRef.current = next;
+                  // Debounce auto-save: save 3s after last transcript change
+                  if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                  debounceTimerRef.current = setTimeout(() => {
+                    try {
+                      localStorage.setItem('livego_active_session', JSON.stringify({
+                        transcript: transcriptRef.current,
+                        toolResults: toolResultsRef.current,
+                        timestamp: Date.now(),
+                        startTime: startTimeRef.current,
+                      }));
+                    } catch (e) { /* ignore */ }
+                  }, 3000);
+                  return next;
                 });
               }
             }
@@ -517,6 +645,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             // Handle Audio Output - Add to queue instead of processing directly
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputAudioContextRef.current) {
+              // New audio chunk = new response, reset interrupt flag
+              isInterruptedRef.current = false;
+
               // Add to queue for async processing
               audioQueueRef.current.push(base64Audio);
 
@@ -528,8 +659,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             if (message.serverContent?.interrupted) {
+              console.log('[Interrupt] ⚡ Server sent interrupted=true — stopping all audio');
+              // Set flag FIRST to halt processAudioQueue
+              isInterruptedRef.current = true;
               // Clear queue immediately on interruption
               audioQueueRef.current = [];
+              isProcessingQueueRef.current = false;
               sourcesRef.current.forEach(src => {
                 try { src.stop(); } catch (e) { }
               });
@@ -546,7 +681,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 if (functionCalls && functionCalls.length > 0) {
                   console.log('[Tool] call received:', message.toolCall);
 
-                  // Mute microphone so the user doesn't interrupt the API while it's processing
+                  // Mark as processing to prevent concurrent tool calls
                   isProcessingToolRef.current = true;
 
                   (async () => {
@@ -595,7 +730,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                             toolResultsRef.current.push(toolResult);
                             setToolResults([...toolResultsRef.current]);
 
-                            if (isConnectedRef.current && sessionPromiseRef.current) {
+                            if (isConnectedRef.current && sessionRef.current) {
                               // Session still alive — save as pending for the next interaction
                               pendingGhostResultsRef.current.push(toolResult);
                               console.log('[Tool] Ghost result saved as pending. Count:', pendingGhostResultsRef.current.length);
@@ -644,17 +779,16 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         });
                       }
 
-                      if (functionResponses.length > 0 && isConnectedRef.current && sessionPromiseRef.current) {
+                      if (functionResponses.length > 0 && isConnectedRef.current && sessionRef.current) {
                         console.log('[Tool] sending response:', functionResponses[0]);
-                        const session = await sessionPromiseRef.current;
-                        session.sendToolResponse({
+                        sessionRef.current.sendToolResponse({
                           functionResponses: functionResponses
                         });
                       }
                     } catch (error) {
                       console.error('[Tool] execution error:', error);
                     } finally {
-                      isProcessingToolRef.current = false; // Restore microphone
+                      isProcessingToolRef.current = false; // Allow new tool calls
                     }
                   })();
                 }
@@ -671,22 +805,33 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
             // A2: IMMEDIATELY stop audio pipeline to prevent WebSocket spam
             isConnectedRef.current = false;
+            sessionRef.current = null; // Kill synchronous session ref — stops all sends instantly
             if (audioWorkletNodeRef.current) {
               audioWorkletNodeRef.current.port.onmessage = null;
             }
+            // Clear audio queue immediately to prevent stale playback
+            audioQueueRef.current = [];
+            isProcessingQueueRef.current = false;
 
-            // Common codes: 1000=normal, 1008=session not found, 1011=server error/quota
+            // Common codes: 1000=normal, 1008=session not found/key issue, 1011=server error/quota
             if (event?.code === 1011) {
               console.error("[DEBUG] Server error — check API quota, model access, or setup message format");
+              showToast('Erro no servidor do Gemini.\nVerifique sua cota de API ou tente novamente.', 'warning');
             } else if (event?.code === 1008) {
-              console.error("[DEBUG] Session not found — previous session was not cleaned up properly");
+              console.error("[DEBUG] Session error 1008:", event?.reason);
+              const reason = (event?.reason || '').toLowerCase();
+              if (reason.includes('leaked') || reason.includes('invalid') || reason.includes('unauthorized')) {
+                showToast('Sua API Key não funciona!\n' + (event?.reason || 'Key inválida ou bloqueada.'), 'error', 10, '👉 Toque aqui para adicionar uma Key válida');
+              } else {
+                showToast('Sessão expirada ou inválida.\nTente reconectar.', 'warning');
+              }
             }
 
             // B1: If connection dropped unexpectedly (not normal close), save everything
             if (event?.code !== 1000 && configRef.current?.onUnexpectedDisconnect) {
               console.log('[DEBUG] Unexpected disconnect detected. Saving session data...');
               configRef.current.onUnexpectedDisconnect({
-                transcript: '', // App.tsx reads from the hook's transcript state
+                transcript: transcriptRef.current,
                 toolResults: [...toolResultsRef.current],
                 closeCode: event?.code || 0,
                 closeReason: event?.reason || 'Unknown',
@@ -712,6 +857,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          // NOTE: realtimeInputConfig with VAD sensitivity is NOT supported
+          // on gemini-2.5-flash-native-audio-preview — causes 1008 crash.
+          // Interrupt relies on: 1) low noise gate (0.002), 2) no audio muting during tools.
           ...(tools.length > 0 && { tools })
         }
       });
@@ -743,10 +891,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     config: currentConfig,
     audioCtx: outputAudioContextRef.current,
     toolResults,
+    isScreenSharing,
     getAnalysers: getAnalyser,
     connect,
     disconnect,
     toggleMute,
-    toggleSpeaker
+    toggleSpeaker,
+    toggleScreenShare
   };
 };

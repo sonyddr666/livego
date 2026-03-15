@@ -709,12 +709,16 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
 
         case 'show_image':
             console.log('[Skill] show_image called:', args);
+            // Auto-detect URL in query field
+            const imgQuery = args.query || '';
+            const isDirectUrl = /^https?:\/\//i.test(imgQuery);
+            const imgSource = isDirectUrl ? 'url' : (args.source || 'search');
             // Dispatch a custom event so any component can react
             window.dispatchEvent(new CustomEvent('livego:show_image', {
                 detail: {
-                    query: args.query || '',
+                    query: imgQuery,
                     caption: args.caption || '',
-                    source: args.source || 'search',
+                    source: imgSource,
                     duration: args.duration || 15,
                     timestamp: Date.now(),
                 }

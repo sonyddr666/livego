@@ -4,6 +4,7 @@ import { HomeScreen } from './components/HomeScreen';
 import { UsageScreen } from './components/UsageScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SkeletonLoader } from './components/LoadingStates/SkeletonLoader';
+import { Toast } from './components/Toast';
 
 // Lazy load secondary screens for better initial bundle size
 const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
@@ -76,6 +77,13 @@ const App: React.FC = () => {
     }
   }, [history]);
 
+  // Listen for toast action (e.g. "add valid API key") — navigate to Account screen
+  useEffect(() => {
+    const handler = () => handleNavigate(ScreenName.ACCOUNT);
+    window.addEventListener('livego:toast_action', handler);
+    return () => window.removeEventListener('livego:toast_action', handler);
+  }, []);
+
   // B3: Check for abandoned active session on mount
   useEffect(() => {
     try {
@@ -106,7 +114,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, getAnalysers } = useLiveAPI();
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, isScreenSharing, toggleScreenShare, getAnalysers } = useLiveAPI();
 
   // B1: Handle unexpected disconnection — save everything
   const handleUnexpectedDisconnect = useCallback((data: {
@@ -127,8 +135,8 @@ const App: React.FC = () => {
     // Track disconnect time for cooldown
     lastDisconnectRef.current = Date.now();
 
-    // Use transcript from the hook's state
-    const currentTranscript = transcript;
+    // Use transcript from the callback (now contains real data from transcriptRef)
+    const currentTranscript = data.transcript || transcript;
 
     // Don't save dropped session if session lasted less than 5 seconds
     // (sign of immediate 1008 rejection — saving context from these creates a loop)
@@ -328,7 +336,10 @@ const App: React.FC = () => {
         <div className="w-full h-full md:max-w-[390px] md:h-[844px] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black">
 
           {/* Inner Screen Content */}
-          <div className="w-full h-full bg-theme-secondary overflow-hidden md:rounded-[32px]">
+          <div className="w-full h-full bg-theme-secondary overflow-hidden md:rounded-[32px] relative">
+            {/* Toast notification — inside the phone frame */}
+            <Toast />
+
             {currentScreen === ScreenName.HOME && (
               <HomeScreen
                 onStartCall={handleStartCall}
@@ -348,6 +359,8 @@ const App: React.FC = () => {
                 toggleSpeaker={toggleSpeaker}
                 caption={transcript}
                 getAnalysers={getAnalysers}
+                isScreenSharing={isScreenSharing}
+                toggleScreenShare={toggleScreenShare}
               />
             )}
 
