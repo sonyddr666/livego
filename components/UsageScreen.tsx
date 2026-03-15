@@ -30,6 +30,35 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
   const { t } = useI18n();
   const [seconds, setSeconds] = useState(0);
   const captionRef = useRef<HTMLDivElement>(null);
+
+  // Search active state (BUSCANDO tag)
+  const [activeSearches, setActiveSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    const onSearchStart = (e: Event) => {
+      const query = (e as CustomEvent).detail?.query || '';
+      setActiveSearches(prev => [...prev, query]);
+    };
+    const onSearchDone = (e: Event) => {
+      const query = (e as CustomEvent).detail?.query || '';
+      setActiveSearches(prev => {
+        const idx = prev.indexOf(query);
+        if (idx >= 0) {
+          const next = [...prev];
+          next.splice(idx, 1);
+          return next;
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('livego:search_active', onSearchStart);
+    window.addEventListener('livego:search_done', onSearchDone);
+    return () => {
+      window.removeEventListener('livego:search_active', onSearchStart);
+      window.removeEventListener('livego:search_done', onSearchDone);
+    };
+  }, []);
+
   const localizedCaption = useMemo(() => {
     if (!caption) return caption;
     const userLabel = t('transcript.userLabel');
@@ -67,6 +96,17 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
 
       {/* Image Overlay — show_image skill */}
       <ImageOverlay />
+
+      {/* BUSCANDO tag — shows while ghost_search is running */}
+      {activeSearches.length > 0 && (
+        <div className="absolute top-24 left-0 right-0 flex justify-center z-30 pointer-events-none animate-in">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600/80 backdrop-blur-md border border-purple-400/30 shadow-lg shadow-purple-500/20">
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">🔍 Buscando</span>
+            <span className="text-xs text-purple-200 max-w-[150px] truncate">{activeSearches[activeSearches.length - 1]}</span>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex justify-between items-center px-8 pt-12 pb-6 relative z-10">

@@ -681,9 +681,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                 if (functionCalls && functionCalls.length > 0) {
                   console.log('[Tool] call received:', message.toolCall);
 
-                  // Mark as processing to prevent concurrent tool calls
-                  isProcessingToolRef.current = true;
-
                   (async () => {
                     try {
                       const functionResponses: FunctionResponseItem[] = [];
@@ -694,6 +691,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         // A1: GHOST SEARCH — Busca dual (resposta imediata + background)
                         if (call.name === 'ghost_search') {
                           console.log('[Tool] Ghost Search: responding immediately, running in background');
+
+                          // Dispatch event so UI shows BUSCANDO tag
+                          window.dispatchEvent(new CustomEvent('livego:search_active', {
+                            detail: { query: (call.args as any)?.query || '' }
+                          }));
                           
                           // 1. Respond IMMEDIATELY to Gemini (avoids 1011 timeout)
                           const immediateResponse = {
@@ -717,6 +719,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                           const ghostCallArgs = call.args as any;
                           handleToolCall(call as FunctionCall).then((ghostResult) => {
                             console.log('[Tool] Ghost Search background result arrived:', ghostResult?.ok);
+
+                            // Dispatch event so UI hides BUSCANDO tag
+                            window.dispatchEvent(new CustomEvent('livego:search_done', {
+                              detail: { query: ghostCallArgs?.query || '', ok: ghostResult?.ok || false }
+                            }));
                             
                             // B2: Save tool result
                             const toolResult: ToolResult = {
@@ -751,6 +758,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                             }
                           }).catch((err) => {
                             console.error('[Tool] Ghost Search background error:', err);
+                            // Clear BUSCANDO tag on error too
+                            window.dispatchEvent(new CustomEvent('livego:search_done', {
+                              detail: { query: ghostCallArgs?.query || '', ok: false, error: true }
+                            }));
                           });
 
                           continue; // Skip normal await flow for ghost_search
@@ -787,8 +798,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                       }
                     } catch (error) {
                       console.error('[Tool] execution error:', error);
-                    } finally {
-                      isProcessingToolRef.current = false; // Allow new tool calls
                     }
                   })();
                 }
