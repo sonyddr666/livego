@@ -8,6 +8,7 @@ interface HistoryScreenProps {
     history: HistoryItem[];
     onBack: () => void;
     onDelete: (id: string) => void;
+    onImport?: (items: HistoryItem[]) => void;
 }
 
 interface ChatMessage {
@@ -15,11 +16,95 @@ interface ChatMessage {
     text: string;
 }
 
-export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, onDelete }) => {
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, onDelete, onImport }) => {
     const { t } = useI18n();
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const { useConversationContext, setUseConversationContext } = useSettingsStore();
     const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
+    const [importStatus, setImportStatus] = useState<string | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // Export all history as JSON file
+    const handleExport = () => {
+        if (history.length === 0) return;
+        
+        const exportData = {
+            version: 1,
+            exportDate: new Date().toISOString(),
+            app: 'livego',
+            totalConversations: history.length,
+            history: history,
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `livego-history-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // Import history from JSON file
+    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target?.result as string);
+                
+                // Validate format
+                if (!data.history || !Array.isArray(data.history)) {
+                    setImportStatus('❌ Formato inválido — arquivo não contém histórico');
+                    return;
+                }
+
+                // Validate items have required fields
+                const validItems = data.history.filter((item: any) => 
+                    item.id && item.date && item.transcript !== undefined
+                );
+
+                if (validItems.length === 0) {
+                    setImportStatus('❌ Nenhuma conversa válida encontrada no arquivo');
+                    return;
+                }
+
+                if (onImport) {
+                    onImport(validItems);
+                    setImportStatus(`✅ ${validItems.length} conversas importadas com sucesso!`);
+                } else {
+                    // Fallback: save directly to localStorage
+                    const existingIds = new Set(history.map(h => h.id));
+                    const newItems = validItems.filter((item: HistoryItem) => !existingIds.has(item.id));
+                    
+                    if (newItems.length === 0) {
+                        setImportStatus('ℹ️ Todas as conversas já existem no histórico');
+                        return;
+                    }
+
+                    const merged = [...newItems, ...history];
+                    try {
+                        localStorage.setItem('livego_history', JSON.stringify(merged));
+                        setImportStatus(`✅ ${newItems.length} novas conversas importadas! Recarregue a página para ver.`);
+                    } catch (err) {
+                        setImportStatus('❌ Erro ao salvar no localStorage');
+                    }
+                }
+            } catch (err) {
+                setImportStatus('❌ Erro ao ler arquivo — verifique se é um JSON válido');
+            }
+        };
+        reader.readAsText(file);
+        
+        // Reset input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
 
     // Helper to parse the raw transcript string into chat messages
     const parsedMessages = useMemo(() => {
@@ -228,6 +313,46 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                     </span>
                 </button>
             </div>
+
+            {/* Export / Import Buttons */}
+            <div className="px-6 py-3 bg-theme-secondary border-b border-theme flex gap-3">
+                <button
+                    type="button"
+                    onClick={handleExport}
+                    disabled={history.length === 0}
+                    className="flex-1 py-2.5 px-4 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                    📤 Exportar ({history.length})
+                </button>
+                <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 py-2.5 px-4 bg-theme-tertiary text-theme-primary text-sm font-semibold rounded-xl hover:bg-theme-hover transition-colors flex items-center justify-center gap-2 border border-theme"
+                >
+                    📥 Importar
+                </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleImport}
+                    className="hidden"
+                />
+            </div>
+
+            {/* Import Status */}
+            {importStatus && (
+                <div className="px-6 py-2 bg-theme-secondary border-b border-theme">
+                    <p className="text-xs text-center">{importStatus}</p>
+                    <button
+                        type="button"
+                        onClick={() => setImportStatus(null)}
+                        className="w-full text-xs text-blue-500 mt-1"
+                    >
+                        Fechar
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto no-scrollbar p-6">
                 {history.length === 0 ? (

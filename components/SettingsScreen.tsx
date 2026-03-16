@@ -11,6 +11,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSkillsStore, type Skill } from '../store/skillsStore';
 import { SkillsScreenContent } from './SkillsScreen';
 import { APP_VERSION } from '../config/version';
+import { listVoices } from '../utils/inworldTTS';
 
 // Instructions Screen with Presets Component
 const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -269,6 +270,11 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const { searchMode, toggleSearchMode } = useSettingsStore();
     const isGhost = searchMode === 'ghost';
+    
+    // Get selected instruction preset name
+    const { presets, selectedPresetId } = useInstructionPresets();
+    const selectedPreset = presets.find(p => p.id === selectedPresetId);
+    const instructionPresetName = selectedPreset?.name || 'Personalizado';
 
     return (
         <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
@@ -294,6 +300,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                     <SettingsItem
                         icon={<IconSparkles />}
                         label={t('settings.item.systemInstructions')}
+                        value={instructionPresetName}
                         color="bg-pink-500"
                         onClick={() => onNavigate(ScreenName.INSTRUCTIONS)}
                     />
@@ -531,10 +538,34 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
 }) => {
     const { t, locale, setLocale } = useI18n();
     const [showApiKey, setShowApiKey] = React.useState(false);
+    const [showTtsSecret, setShowTtsSecret] = React.useState(false);
     const [pushNotifications, setPushNotifications] = React.useState(true);
     const [emailDigest, setEmailDigest] = React.useState(false);
     const [shareUsageStats, setShareUsageStats] = React.useState(true);
     const [allowPersonalization, setAllowPersonalization] = React.useState(true);
+    
+    // TTS Settings
+    const { ttsSecretKey, setTtsSecretKey, ttsVoiceId, setTtsVoiceId, ttsModel, setTtsModel } = useSettingsStore();
+    
+    // Dynamic TTS voice list
+    const [ttsVoices, setTtsVoices] = React.useState<{ voiceId: string; displayName: string; languageCode: string }[]>([]);
+    const [loadingVoices, setLoadingVoices] = React.useState(false);
+    
+    // Load voices when secret key is available
+    React.useEffect(() => {
+        if (ttsSecretKey && ttsSecretKey.length > 5) {
+            setLoadingVoices(true);
+            listVoices(ttsSecretKey).then((voices) => {
+                if (voices && voices.length > 0) {
+                    setTtsVoices(voices);
+                }
+            }).catch(() => {
+                // Ignore errors
+            }).finally(() => {
+                setLoadingVoices(false);
+            });
+        }
+    }, [ttsSecretKey]);
 
     // --- VOICE SCREEN ---
     if (screen === ScreenName.VOICE) {
@@ -671,6 +702,99 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
 
                             <p className="mt-2 text-xs text-theme-secondary">
                                 {t('settings.account.apiKeySaved')}
+                            </p>
+                        </div>
+                    </SettingsGroup>
+
+                    {/* TTS Configuration Section */}
+                    <SettingsGroup title="Configuração de Voz (TTS)">
+                        <div className="p-4 space-y-4">
+                            {/* Secret Key */}
+                            <div>
+                                <label className="block text-xs font-medium text-theme-secondary mb-2">Secret Key (Inworld TTS)</label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type={showTtsSecret ? 'text' : 'password'}
+                                        value={ttsSecretKey}
+                                        onChange={(e) => setTtsSecretKey(e.target.value)}
+                                        placeholder="Sua secret key do Inworld TTS"
+                                        className="flex-1 px-3 py-2 border border-theme rounded-lg text-sm outline-none focus:border-purple-500 bg-theme-tertiary text-theme-primary"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowTtsSecret(!showTtsSecret)}
+                                        className="p-2 text-theme-secondary hover:text-theme-primary hover:bg-theme-hover rounded-lg transition-colors"
+                                    >
+                                        {showTtsSecret ? <IconEyeOff className="w-5 h-5" /> : <IconEye className="w-5 h-5" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Voice Selection */}
+                            <div>
+                                <label className="block text-xs font-medium text-theme-secondary mb-2">
+                                    Voz TTS {loadingVoices && <span className="text-purple-400 animate-pulse">carregando...</span>}
+                                </label>
+                                {ttsVoices.length > 0 ? (
+                                    <div className="space-y-1 max-h-[200px] overflow-y-auto no-scrollbar bg-theme-tertiary rounded-lg border border-theme p-2">
+                                        {ttsVoices.map((voice) => (
+                                            <button
+                                                key={voice.voiceId}
+                                                type="button"
+                                                onClick={() => setTtsVoiceId(voice.voiceId)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                                    ttsVoiceId === voice.voiceId
+                                                        ? 'bg-purple-600 text-white'
+                                                        : 'text-theme-primary hover:bg-theme-hover'
+                                                }`}
+                                            >
+                                                <span className="font-medium">{voice.displayName || voice.voiceId}</span>
+                                                {voice.languageCode && (
+                                                    <span className="ml-2 text-xs opacity-60">{voice.languageCode}</span>
+                                                )}
+                                                {ttsVoiceId === voice.voiceId && (
+                                                    <IconCheck className="w-4 h-4 inline ml-2" />
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <input
+                                        type="text"
+                                        value={ttsVoiceId}
+                                        onChange={(e) => setTtsVoiceId(e.target.value)}
+                                        placeholder="default--pb4bm1oowkem_r9ri2wiw__makoguren2"
+                                        className="w-full px-3 py-2 border border-theme rounded-lg text-sm outline-none focus:border-purple-500 bg-theme-tertiary text-theme-primary"
+                                    />
+                                )}
+                                {!ttsSecretKey && (
+                                    <p className="mt-1 text-xs text-theme-muted">Configure a secret key para carregar vozes disponíveis</p>
+                                )}
+                            </div>
+
+                            {/* Model Selection */}
+                            <div>
+                                <label className="block text-xs font-medium text-theme-secondary mb-2">Modelo TTS</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTtsModel('inworld-tts-1.5-mini')}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${ttsModel === 'inworld-tts-1.5-mini' ? 'bg-purple-600 text-white' : 'bg-theme-tertiary text-theme-secondary'}`}
+                                    >
+                                        Mini (Rápido)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTtsModel('inworld-tts-1.5-max')}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${ttsModel === 'inworld-tts-1.5-max' ? 'bg-purple-600 text-white' : 'bg-theme-tertiary text-theme-secondary'}`}
+                                    >
+                                        Max (Qualidade)
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-theme-muted">
+                                🔊 Configure a secret key da API Inworld TTS para ativar a síntese de voz.
                             </p>
                         </div>
                     </SettingsGroup>

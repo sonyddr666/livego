@@ -11,10 +11,14 @@ const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m =
 const SettingsDetailScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsDetailScreen })));
 const HistoryScreen = lazy(() => import('./components/HistoryScreen').then(m => ({ default: m.HistoryScreen })));
 
-import { useLiveAPI } from './hooks/useLiveAPI';
+// Hooks para arquitetura texto->texto
+import { useChatAPI } from './hooks/useChatAPI';
+import { useSpeechRecognition, SPEECH_READY_EVENT } from './hooks/useSpeechRecognition';
 import { useI18n } from './i18n';
 import { useInstructionPresets } from './store/instructionPresetsStore';
 import { useSettingsStore } from './store/settingsStore';
+import { speakChunked, stopSpeaking, isPlaying, audioManager } from './utils/inworldTTS';
+import { useVoiceActivityDetection } from './hooks/useVoiceActivityDetection';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
@@ -27,7 +31,7 @@ const App: React.FC = () => {
 
   // Get active instruction from presets store
   const { getActiveInstruction } = useInstructionPresets();
-  const { useConversationContext } = useSettingsStore();
+  const { useConversationContext, ttsSecretKey, ttsVoiceId, ttsModel } = useSettingsStore();
 
   // Settings State
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
@@ -59,10 +63,15 @@ const App: React.FC = () => {
   });
 
   const startTimeRef = useRef<number>(0);
-  const lastDisconnectRef = useRef<number>(0); // Cooldown: timestamp of last unexpected disconnect
+  const lastDisconnectRef = useRef<number>(0);
 
-  // B4: Dropped session state
-  const [sessionDropped, setSessionDropped] = useState<boolean>(() => {
+  // Estado de call ativa
+  const [isInCall, setIsInCall] = useState(false);
+  // isProcessing é usado para UI feedback durante processamento de mensagem
+  const [, setIsProcessing] = useState(false);
+
+  // B4: Dropped session state (used for context injection on reconnect)
+  const [/* sessionDropped */, setSessionDropped] = useState<boolean>(() => {
     try {
       return !!localStorage.getItem(DROPPED_SESSION_KEY);
     } catch { return false; }
@@ -90,8 +99,6 @@ const App: React.FC = () => {
       const activeSession = localStorage.getItem(ACTIVE_SESSION_KEY);
       if (activeSession && !localStorage.getItem(DROPPED_SESSION_KEY)) {
         const session = JSON.parse(activeSession);
-        // If there's an active session snapshot but no dropped session flag,
-        // it means the app closed/crashed during a session
         if (session.timestamp && (Date.now() - session.timestamp) < 24 * 60 * 60 * 1000) {
           console.log('[App] Found abandoned active session, creating dropped session entry');
           const droppedSession: DroppedSession = {
@@ -114,9 +121,214 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, isScreenSharing, toggleScreenShare, getAnalysers } = useLiveAPI();
+  // ================== HOOKS DE COMUNICAÇÃO ==================
+  // Hook de Chat (Gemini texto — sem TTS)
+  const { connected, isProcessing: chatProcessing, transcript, toolResults, sendMessage, disconnect: disconnectChat, connect: connectChat } = useChatAPI();
+  
+  // Hook de STT (Web Speech API — com pause/resume)
+  const { isListening, startListening, stopListening, pauseListening, resumeListening, resetTranscript } = useSpeechRecognition();
+  
+  // Refs para controle do fluxo STT → LLM → TTS
+  const isProcessingRef = useRef(false);
+  const isSpeakerOnRef = useRef(true);
+  const isMutedRef = useRef(false);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const lastBotResponseRef = useRef(''); // Para filtrar eco do STT
+
+  // Speaker state
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+
+  // VAD adaptativo para interrupt automático por voz durante TTS
+  // Callback direto — sem React state, sem useEffect, sem stale closure
+  // minSpeechDuration: 100ms — sensível o suficiente para gaps entre chunks
+  const handleVADInterrupt = useCallback(() => {
+    if (!isPlaying()) return;
+    if (isMutedRef.current) return;
+
+    console.log('[App] VAD interrupt! Voz detectada durante TTS — parando TTS');
+    stopSpeaking();
+    isProcessingRef.current = false;
+    setIsProcessing(false);
+    resetTranscript();
+    // STT já está ativo (não pausamos mais), só resetar transcript
+  }, [resetTranscript]);
+
+  const { startVAD, stopVAD } = useVoiceActivityDetection({
+    thresholdMultiplier: 3.0,
+    minSpeechDurationMs: 100,  // 100ms — sensível para gaps entre chunks
+    warmupMs: 3000,
+    onVoiceDetected: handleVADInterrupt,
+    onVoiceStart: () => {
+      // Ducking suave: reduz volume do TTS quando usuário começa a falar
+      if (isPlaying()) {
+        audioManager.duckVolume(0.35, 0.3); // 35% volume em 300ms — transição natural
+      }
+    },
+    onVoiceEnd: () => {
+      // Restore suave: volta volume do TTS quando usuário para de falar
+      audioManager.restoreVolume(0.5); // 100% em 500ms
+    },
+  });
+
+  // Sync speaker ref
+  useEffect(() => {
+    isSpeakerOnRef.current = isSpeakerOn;
+  }, [isSpeakerOn]);
+
+  // Ouvir eventos de fala pronta do STT e enviar para o Gemini
+  // NOVA ABORDAGEM: STT SEMPRE ATIVO (confiando no AEC para filtrar eco do TTS)
+  // Se TTS está tocando e STT detecta fala → é interrupt (para TTS e processa)
+  // Se TTS não está tocando → fluxo normal
+  useEffect(() => {
+    const handleSpeechReady = async (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const speechText = detail?.transcript;
+      
+      // Guards básicos
+      if (!speechText || !connected || isMutedRef.current) return;
+      
+      // Se TTS está tocando → verificar se é eco do TTS ou fala real do usuário
+      if (isPlaying()) {
+        const lastResponse = lastBotResponseRef.current.toLowerCase();
+        const speechLower = speechText.toLowerCase();
+        
+        if (lastResponse) {
+          // Filtro de eco agressivo: palavras com >2 chars, split por espaço e pontuação
+          const speechWords: string[] = speechLower.split(/[\s,.!?;:]+/).filter((w: string) => w.length > 2);
+          const botWords = new Set<string>(lastResponse.split(/[\s,.!?;:]+/).filter((w: string) => w.length > 2));
+          const matchCount = speechWords.filter((w: string) => botWords.has(w)).length;
+          const similarity = speechWords.length > 0 ? matchCount / speechWords.length : 0;
+          
+          console.log(`[App] STT durante TTS — similaridade: ${(similarity * 100).toFixed(0)}% (${matchCount}/${speechWords.length} palavras)`);
+          
+          if (similarity > 0.25) {
+            console.log('[App] STT ignorado — eco do TTS');
+            return; // Descarta — é eco do TTS
+          }
+        }
+        
+        console.log('[App] STT interrupt durante TTS:', speechText);
+        stopSpeaking();
+        isProcessingRef.current = false;
+        // Continuar para processar a fala como nova mensagem
+      }
+      
+      // Se já está processando outra mensagem, ignorar
+      if (isProcessingRef.current) return;
+      
+      console.log('[App] Fala reconhecida:', speechText);
+      isProcessingRef.current = true;
+      setIsProcessing(true);
+
+      // NÃO pausar STT — ele continua ativo para detectar interrupt
+      // O AEC filtra o eco do TTS
+
+      try {
+        // Enviar para o Gemini
+        const response = await sendMessage(speechText);
+        lastBotResponseRef.current = response; // Salvar para filtro de eco
+        console.log('[App] Resposta do Gemini:', response.substring(0, 100) + '...');
+
+        // Reproduzir resposta com TTS chunked (se speaker ON e tem config)
+        // STT continua ativo — AEC filtra eco, VAD detecta interrupt
+        if (response && ttsSecretKey && isSpeakerOnRef.current) {
+          try {
+            await speakChunked(
+              response,
+              ttsSecretKey,
+              ttsVoiceId,
+              ttsModel as any,
+              {
+                onChunkStart: (i, total) => {
+                  console.log(`[App] TTS chunk ${i + 1}/${total}`);
+                },
+                onQueueComplete: () => {
+                  console.log('[App] TTS completo');
+                  audioManager.resetDuckState();
+                  audioManager.restoreVolume(0.5);
+                  isProcessingRef.current = false;
+                  setIsProcessing(false);
+                },
+                onCancelled: () => {
+                  console.log('[App] TTS cancelado (interrupt)');
+                  audioManager.resetDuckState();
+                  audioManager.restoreVolume(0.3);
+                  isProcessingRef.current = false;
+                  setIsProcessing(false);
+                },
+              }
+            );
+          } catch (ttsError) {
+            console.warn('[App] TTS erro:', ttsError);
+          }
+        }
+      } catch (error) {
+        console.error('[App] Erro ao processar mensagem:', error);
+      } finally {
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+      }
+    };
+
+    window.addEventListener(SPEECH_READY_EVENT, handleSpeechReady);
+    return () => window.removeEventListener(SPEECH_READY_EVENT, handleSpeechReady);
+  }, [connected, sendMessage, ttsSecretKey, ttsVoiceId, ttsModel]);
+
+  // ================== FIM HOOKS DE COMUNICAÇÃO ==================
+
+  // Mute state — independente do isListening (que pode estar pausado durante TTS)
+  const [isMuted, setIsMuted] = useState(false);
+  
+  // Controlar mute — interrupt TTS + parar/iniciar STT
+  const toggleMute = useCallback(() => {
+    if (!isMuted) {
+      // MUTAR: parar TTS + parar STT
+      setIsMuted(true);
+      isMutedRef.current = true;
+      stopSpeaking(); // Parar TTS imediatamente (interrupt!)
+      stopListening();
+      resetTranscript();
+      console.log('[App] Muted — TTS interrompido, STT parado');
+    } else {
+      // DESMUTAR: resetar e iniciar STT
+      setIsMuted(false);
+      isMutedRef.current = false;
+      resetTranscript();
+      startListening();
+      console.log('[App] Unmuted — STT iniciado');
+    }
+  }, [isMuted, startListening, stopListening, resetTranscript]);
+  
+  // Speaker toggle — conectado ao TTS
+  const toggleSpeaker = useCallback(() => {
+    setIsSpeakerOn(prev => {
+      const newValue = !prev;
+      if (!newValue) {
+        // Desligando speaker: parar TTS se estiver falando
+        stopSpeaking();
+        // Retomar STT se estava pausado esperando TTS
+        if (!isMutedRef.current && isProcessingRef.current) {
+          resumeListening();
+        }
+        console.log('[App] Speaker OFF — TTS parado');
+      } else {
+        console.log('[App] Speaker ON');
+      }
+      return newValue;
+    });
+  }, [resumeListening]);
+
+  // Screen sharing - desabilitado na nova arquitetura
+  const isScreenSharing = false;
+  const toggleScreenShare = useCallback(() => {
+    console.log('[App] Screen sharing não suportado na arquitetura texto');
+  }, []);
+
+  // getAnalysers - retornar null (não temos mais visualização de áudio)
+  const getAnalysers = () => ({ input: null, output: null });
 
   // B1: Handle unexpected disconnection — save everything
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUnexpectedDisconnect = useCallback((data: {
     transcript: string;
     toolResults: ToolResult[];
@@ -139,11 +351,9 @@ const App: React.FC = () => {
     const currentTranscript = data.transcript || transcript;
 
     // Don't save dropped session if session lasted less than 5 seconds
-    // (sign of immediate 1008 rejection — saving context from these creates a loop)
     const sessionTooShort = durationMs < 5000;
     if (sessionTooShort) {
       console.log('[App] Session lasted <5s — skipping dropped session save to prevent loop');
-      // Clean up any existing dropped session to break the loop
       try {
         localStorage.removeItem(DROPPED_SESSION_KEY);
         localStorage.removeItem(ACTIVE_SESSION_KEY);
@@ -173,7 +383,7 @@ const App: React.FC = () => {
       dropped: true,
       timestamp: Date.now(),
       transcript: currentTranscript,
-      toolResults: data.toolResults.slice(0, 3), // Limit to 3 results
+      toolResults: data.toolResults.slice(0, 3),
       closeCode: data.closeCode,
       closeReason: data.closeReason,
       pendingGhostResults: [],
@@ -280,7 +490,50 @@ const App: React.FC = () => {
       contextWithHistory = `${contextWithHistory}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
     }
 
-    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true, useConversationContext, onUnexpectedDisconnect: handleUnexpectedDisconnect });
+    // Conectar ao Gemini (apenas texto, sem TTS)
+    try {
+      await connectChat({
+        voiceName,
+        systemInstruction: contextWithHistory,
+        apiKey,
+        enableAdvancedFeatures: true,
+        useConversationContext,
+      });
+    } catch (e) {
+      console.error('[App] Erro ao conectar chat:', e);
+    }
+
+    // Reset mute state
+    setIsMuted(false);
+    isMutedRef.current = false;
+    
+    setIsInCall(true);
+    startListening(); // Iniciar STT
+    
+    // Iniciar VAD com AEC (echo cancellation) para interrupt automático por voz
+    // AEC filtra o áudio do TTS que vaza pelo speaker antes de chegar ao VAD
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
+      micStreamRef.current = stream;
+      
+      // Verificar se AEC foi realmente aplicado
+      const track = stream.getAudioTracks()[0];
+      const settings = track?.getSettings();
+      console.log(`[App] Mic AEC: ${settings?.echoCancellation}, NS: ${settings?.noiseSuppression}, AGC: ${settings?.autoGainControl}`);
+      
+      startVAD(stream);
+      console.log('[App] VAD adaptativo iniciado (calibrando noise floor por 2s...)');
+    } catch (e) {
+      console.warn('[App] Não foi possível iniciar VAD:', e);
+    }
+    
+    setCurrentScreen(ScreenName.USAGE);
   };
 
   // Watch for connection state to transition screen
@@ -317,8 +570,27 @@ const App: React.FC = () => {
     } catch (e) { /* ignore */ }
     setSessionDropped(false);
 
-    disconnect();
+    // PARAR TUDO: TTS + STT + VAD + Chat
+    stopSpeaking();      // Parar áudio TTS imediatamente
+    stopListening();     // Parar STT (abort + destroy)
+    stopVAD();           // Parar VAD
+    disconnectChat();    // Desconectar chat
+    resetTranscript();   // Limpar transcript do STT
+    
+    // Liberar mic stream
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(t => t.stop());
+      micStreamRef.current = null;
+    }
+    
+    isProcessingRef.current = false;
+    isMutedRef.current = false;
+    setIsMuted(false);
+    setIsInCall(false);
+    setIsProcessing(false);
     setCurrentScreen(ScreenName.HOME);
+    
+    console.log('[App] Call encerrada — tudo parado');
   };
 
   const deleteHistoryItem = (id: string) => {
@@ -346,7 +618,7 @@ const App: React.FC = () => {
                 onSettings={() => handleNavigate(ScreenName.SETTINGS)}
                 hasApiKey={hasApiKey}
                 onConfigureApiKey={() => handleNavigate(ScreenName.ACCOUNT)}
-                isConnecting={isConnecting}
+                isConnecting={isInCall && chatProcessing}
               />
             )}
 
@@ -379,6 +651,14 @@ const App: React.FC = () => {
                   history={history}
                   onBack={() => handleNavigate(ScreenName.SETTINGS)}
                   onDelete={deleteHistoryItem}
+                  onImport={(items) => {
+                    // Merge imported items, avoiding duplicates
+                    const existingIds = new Set(history.map(h => h.id));
+                    const newItems = items.filter(item => !existingIds.has(item.id));
+                    if (newItems.length > 0) {
+                      setHistory(prev => [...newItems, ...prev]);
+                    }
+                  }}
                 />
               )}
 
