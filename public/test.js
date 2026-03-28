@@ -150,10 +150,14 @@ function scheduleSessionSave() {
                 timestamp: Date.now(),
             }));
             savedSessionData = loadSavedSession();
-            $('recoveryBanner').hidden = !savedSessionData?.transcript;
-            if (!$('recoveryBanner').hidden) {
-                $('recoveryBanner').textContent =
-                    'Sessao ativa salva localmente. Se a conexao cair, esse contexto volta na proxima conexao.';
+            const recoveryBanner = $('recoveryBanner');
+            if (recoveryBanner) {
+                const isCollapsed = localStorage.getItem(CONFIG_BAR_HIDDEN_KEY) === '1';
+                recoveryBanner.hidden = isCollapsed || !savedSessionData?.transcript;
+                if (!recoveryBanner.hidden) {
+                    recoveryBanner.textContent =
+                        'Sessao ativa salva localmente. Se a conexao cair, esse contexto volta na proxima conexao.';
+                }
             }
         } catch (error) {
             console.warn('Unable to save session state:', error);
@@ -241,7 +245,7 @@ function renderModeTabs() {
 function updateComposerState() {
     const mode = MODE_CONFIG[sendMode];
     const connected = !!session;
-    $('userInput').disabled = !connected || !mode.allowText;
+    $('userInput').disabled = !mode.allowText;
     $('sendBtn').disabled = !connected || !mode.allowText;
     $('userInput').placeholder = mode.allowText
         ? 'Digite sua mensagem... (Ctrl+Enter para enviar)'
@@ -283,7 +287,15 @@ function applyConfigBarState() {
     $('toggleBarBtn').setAttribute('aria-expanded', String(!isCollapsed));
     $('toggleBarBtn').classList.toggle('active', !isCollapsed);
     $('toggleBarBtn').classList.toggle('alert', isCollapsed);
-    document.querySelector('.config-bar')?.classList.toggle('collapsed', isCollapsed);
+    const configBar = document.querySelector('.config-bar');
+    const recoveryBanner = $('recoveryBanner');
+    if (configBar) {
+        configBar.classList.toggle('collapsed', isCollapsed);
+        configBar.hidden = isCollapsed;
+    }
+    if (recoveryBanner) {
+        recoveryBanner.hidden = isCollapsed || !savedSessionData?.transcript;
+    }
 }
 
 function setStatus(nextStatus) {
