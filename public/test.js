@@ -1,6 +1,8 @@
 ﻿import { GoogleGenAI, Modality } from 'https://esm.run/@google/genai';
 
 const ACTIVE_SESSION_KEY = 'livego_active_session';
+const SYSTEM_PROMPT_KEY = 'livego_system_prompt';
+const CONFIG_BAR_HIDDEN_KEY = 'livego_config_bar_hidden';
 const TRANSCRIPT_DEBOUNCE_MS = 3000;
 const BUBBLE_IDLE_MS = 3000;
 const MODEL_NAME = 'gemini-3.1-flash-live-preview';
@@ -49,11 +51,22 @@ let savedSessionData = loadSavedSession();
 
 init();
 
+function getDefaultSystemPrompt() {
+    return [
+        'Voce e um assistente inteligente.',
+        'Responda em portugues do Brasil, com clareza e objetividade.',
+        'Quando houver tools disponiveis, use-as para fatos atualizados e URLs especificas.',
+        'A conversa acontece em audio, mas a interface mostra transcricoes incrementais.',
+    ].join('\n');
+}
+
 function init() {
     try {
         $('apiKey').value = localStorage.getItem('gemini_api_key') || '';
+        $('systemPrompt').value = localStorage.getItem(SYSTEM_PROMPT_KEY) || getDefaultSystemPrompt();
     } catch (error) {
         console.warn('localStorage unavailable for API key:', error);
+        $('systemPrompt').value = getDefaultSystemPrompt();
     }
 
     if (savedSessionData?.transcript) {
@@ -83,6 +96,8 @@ function init() {
         this.style.height = Math.min(this.scrollHeight, 150) + 'px';
     });
 
+    $('systemPrompt').addEventListener('input', persistSystemPrompt);
+
     $('modeTabs').addEventListener('click', async (event) => {
         const button = event.target.closest('[data-mode]');
         if (!button) return;
@@ -101,6 +116,7 @@ function init() {
     });
 
     renderModeTabs();
+    applyConfigBarState();
     updateComposerState();
     updateStatusUI();
     drawIdleMeter();
@@ -113,6 +129,14 @@ function loadSavedSession() {
     } catch (error) {
         console.warn('Unable to load saved session:', error);
         return null;
+    }
+}
+
+function persistSystemPrompt() {
+    try {
+        localStorage.setItem(SYSTEM_PROMPT_KEY, $('systemPrompt').value);
+    } catch (error) {
+        console.warn('Unable to persist system prompt:', error);
     }
 }
 
@@ -245,6 +269,21 @@ function updateStatusUI() {
     $('speakerBtn').disabled = !connected;
 
     updateComposerState();
+}
+
+function applyConfigBarState() {
+    let isCollapsed = false;
+    try {
+        isCollapsed = localStorage.getItem(CONFIG_BAR_HIDDEN_KEY) === '1';
+    } catch (error) {
+        console.warn('Unable to read config bar state:', error);
+    }
+
+    $('toggleBarBtn').textContent = isCollapsed ? 'Mostrar barra' : 'Esconder barra';
+    $('toggleBarBtn').setAttribute('aria-expanded', String(!isCollapsed));
+    $('toggleBarBtn').classList.toggle('active', !isCollapsed);
+    $('toggleBarBtn').classList.toggle('alert', isCollapsed);
+    document.querySelector('.config-bar')?.classList.toggle('collapsed', isCollapsed);
 }
 
 function setStatus(nextStatus) {
@@ -549,12 +588,8 @@ async function stopMicrophonePipeline() {
     }
 }
 function buildSystemInstruction() {
-    const parts = [
-        'Voce e um assistente inteligente.',
-        'Responda em portugues do Brasil, com clareza e objetividade.',
-        'Quando houver tools disponiveis, use-as para fatos atualizados e URLs especificas.',
-        'A conversa acontece em audio, mas a interface mostra transcricoes incrementais.',
-    ];
+    const customPrompt = $('systemPrompt')?.value.trim();
+    const parts = [customPrompt || getDefaultSystemPrompt()];
 
     if (savedSessionData?.transcript) {
         const transcriptPreview = savedSessionData.transcript.slice(-5000);
@@ -919,7 +954,18 @@ function toggleSpeaker() {
     updateStatusUI();
 }
 
+function toggleConfigBar() {
+    try {
+        const isCollapsed = localStorage.getItem(CONFIG_BAR_HIDDEN_KEY) === '1';
+        localStorage.setItem(CONFIG_BAR_HIDDEN_KEY, isCollapsed ? '0' : '1');
+    } catch (error) {
+        console.warn('Unable to persist config bar state:', error);
+    }
+    applyConfigBarState();
+}
+
 window.toggleConnection = toggleConnection;
 window.sendMessage = sendMessage;
 window.toggleMute = toggleMute;
 window.toggleSpeaker = toggleSpeaker;
+window.toggleConfigBar = toggleConfigBar;

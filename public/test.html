@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>LiveGo â€” Modo Teste (Texto)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -30,11 +30,17 @@
             --radius: 12px;
         }
 
+        html,
+        body {
+            min-height: 100%;
+        }
+
         body {
             font-family: 'Inter', system-ui, sans-serif;
             background: var(--bg);
             color: var(--text);
             height: 100vh;
+            min-height: 100dvh;
             display: flex;
             flex-direction: column;
         }
@@ -136,7 +142,8 @@
         }
 
         .config-bar input,
-        .config-bar select {
+        .config-bar select,
+        .config-bar textarea {
             padding: 6px 10px;
             background: var(--surface);
             border: 1px solid var(--border);
@@ -148,9 +155,21 @@
         }
 
         .config-bar input:focus,
-        .config-bar select:focus {
+        .config-bar select:focus,
+        .config-bar textarea:focus {
             outline: none;
             border-color: var(--accent);
+        }
+
+        .config-bar textarea {
+            width: 100%;
+            min-height: 84px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+
+        .system-prompt-wrap {
+            width: 100%;
         }
 
         .api-key-input {
@@ -180,6 +199,7 @@
             flex: 1;
             overflow-y: auto;
             padding: 20px;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -286,9 +306,13 @@
             display: flex;
             gap: 10px;
             padding: 14px 20px;
+            padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
             border-top: 1px solid var(--border);
             background: var(--surface);
             flex-shrink: 0;
+            position: sticky;
+            bottom: 0;
+            z-index: 20;
         }
 
         .input-bar textarea {
@@ -385,6 +409,11 @@
             border-color: rgba(248, 113, 113, 0.3);
         }
 
+        .mini-btn.toggle-bar {
+            display: inline-flex;
+            align-items: center;
+        }
+
         .status-dot.connecting {
             background: #fbbf24;
             box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
@@ -457,7 +486,16 @@
             border-color: rgba(124, 92, 252, 0.38);
         }
 
+        .config-bar.collapsed {
+            display: none;
+        }
+
         @media (max-width: 500px) {
+            body {
+                min-height: 100svh;
+                min-height: 100dvh;
+            }
+
             .header {
                 flex-direction: column;
                 align-items: stretch;
@@ -474,6 +512,18 @@
 
             .api-key-input {
                 min-width: unset;
+            }
+
+            .chat-area {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+            }
+
+            .input-bar {
+                padding: 12px 14px;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 12px));
+                background: rgba(19, 19, 26, 0.98);
             }
         }
     </style>
@@ -494,6 +544,7 @@
         </div>
         <div class="header-actions">
             <div class="status-dot" id="statusDot"></div>
+            <button class="mini-btn toggle-bar" id="toggleBarBtn" type="button" onclick="toggleConfigBar()">Esconder barra</button>
             <button class="mini-btn" id="muteBtn" type="button" onclick="toggleMute()">Mute</button>
             <button class="mini-btn" id="speakerBtn" type="button" onclick="toggleSpeaker()">Speaker</button>
             <button class="connect-btn off" id="connectBtn" onclick="toggleConnection()">Conectar</button>
@@ -526,6 +577,10 @@
                 <button class="mode-tab" type="button" data-mode="mic_only">So Mic</button>
                 <button class="mode-tab" type="button" data-mode="text_only">So Texto</button>
             </div>
+        </div>
+        <div class="system-prompt-wrap">
+            <label>System Prompt</label><br>
+            <textarea id="systemPrompt" placeholder="Escreva aqui o system prompt que voce quer usar na sessao..."></textarea>
         </div>
     </div>
 
