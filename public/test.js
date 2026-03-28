@@ -25,9 +25,8 @@ let isManualDisconnect = false;
 
 let audioCtx = null;
 let outputGainNode = null;
-let outputQueue = [];
-let isDrainingOutput = false;
-let activeOutputSource = null;
+let activeOutputSources = new Set();
+let nextOutputStartTime = 0;
 
 let mediaStream = null;
 let mediaSourceNode = null;
@@ -352,50 +351,44 @@ async function resampleToContextBuffer(float32, sourceRate) {
     return await offline.startRendering();
 }
 
-async function drainOutputQueue() {
-    if (isDrainingOutput || !audioCtx || !outputGainNode) return;
-    isDrainingOutput = true;
-
-    try {
-        while (outputQueue.length > 0) {
-            const chunk = outputQueue.shift();
-            if (!chunk) continue;
-            const buffer = await resampleToContextBuffer(chunk, OUTPUT_SAMPLE_RATE);
-            await new Promise((resolve) => {
-                activeOutputSource = audioCtx.createBufferSource();
-                activeOutputSource.buffer = buffer;
-                activeOutputSource.connect(outputGainNode);
-                activeOutputSource.onended = () => {
-                    activeOutputSource = null;
-                    resolve();
-                };
-                activeOutputSource.start();
-            });
-        }
-    } catch (error) {
-        console.error('Audio output error:', error);
-    } finally {
-        activeOutputSource = null;
-        isDrainingOutput = false;
-    }
-}
-
 function stopOutputPlayback() {
-    outputQueue = [];
-    if (activeOutputSource) {
+    nextOutputStartTime = 0;
+    for (const source of activeOutputSources) {
         try {
-            activeOutputSource.stop();
+            source.stop();
         } catch (error) {
             console.warn('Unable to stop output source:', error);
         }
-        activeOutputSource = null;
     }
+    activeOutputSources.clear();
 }
 
-function queueOutputAudio(base64Audio) {
-    if (!$('playAudio').checked || !audioCtx) return;
-    outputQueue.push(decodeBase64ToFloat32(base64Audio));
-    void drainOutputQueue();
+async function queueOutputAudio(base64Audio) {
+    if (!$('playAudio').checked || !audioCtx || !outputGainNode) return;
+
+    try {
+        await ensureAudioContextRunning();
+        const pcm = decodeBase64ToFloat32(base64Audio);
+        const buffer = await resampleToContextBuffer(pcm, OUTPUT_SAMPLE_RATE);
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(outputGainNode);
+
+        const safetyLead = 0.02;
+        const startAt = Math.max(audioCtx.currentTime + safetyLead, nextOutputStartTime);
+        nextOutputStartTime = startAt + buffer.duration;
+
+        activeOutputSources.add(source);
+        source.onended = () => {
+            activeOutputSources.delete(source);
+            if (activeOutputSources.size === 0 && audioCtx) {
+                nextOutputStartTime = Math.max(nextOutputStartTime, audioCtx.currentTime);
+            }
+        };
+        source.start(startAt);
+    } catch (error) {
+        console.error('Audio output error:', error);
+    }
 }
 
 function drawIdleMeter() {
