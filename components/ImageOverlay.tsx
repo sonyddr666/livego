@@ -130,7 +130,7 @@ export const ImageOverlay: React.FC = () => {
               <div className="flex flex-col items-center justify-center text-white/50 px-6 py-12">
                 <span className="text-4xl mb-3">🖼️</span>
                 <span className="text-sm text-center font-medium">Imagem não encontrada</span>
-                <span className="text-xs text-white/30 mt-1 text-center">"{image?.query}"</span>
+                <span className="text-xs text-white/30 mt-1 text-center">&ldquo;{image?.query}&rdquo;</span>
               </div>
             )}
 

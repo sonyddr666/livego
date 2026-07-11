@@ -54,8 +54,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                 // If we can't identify, append to previous or default to user?
                 // Ideally this shouldn't happen with correct formatting.
                 // Let's assume it's continuation or unlabelled.
-                if (messages.length > 0) {
-                    messages[messages.length - 1].text += '\n' + cleanPart;
+                const previousMessage = messages[messages.length - 1];
+                if (previousMessage) {
+                    previousMessage.text += '\n' + cleanPart;
                 } else {
                     // Try to guess based on content or default to user
                     messages.push({ role: 'user', text: cleanPart });
@@ -157,7 +158,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                                                 <p className="text-sm font-medium text-theme-primary truncate">
                                                     {tr.toolName === 'ghost_search' ? '🔍 Ghost Search' : `🔧 ${tr.toolName}`}
                                                 </p>
-                                                <p className="text-xs text-theme-secondary truncate">"{tr.query}"</p>
+                                                <p className="text-xs text-theme-secondary truncate">&ldquo;{tr.query}&rdquo;</p>
                                             </div>
                                             <IconChevronRight className={`w-4 h-4 text-theme-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                                         </button>

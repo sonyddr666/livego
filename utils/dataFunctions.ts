@@ -630,7 +630,7 @@ export async function ghostSearch(args: {
         let data: any;
         try {
             data = JSON.parse(rawText);
-        } catch (parseErr) {
+        } catch {
             console.error('[Ghost-Search] JSON parse error. Raw (first 500 chars):', rawText.slice(0, 500));
             return {
                 ok: false,
@@ -707,7 +707,7 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
         case 'ghost_search':
             return await ghostSearch(args);
 
-        case 'show_image':
+        case 'show_image': {
             console.log('[Skill] show_image called:', args);
             // Auto-detect URL in query field
             const imgQuery = args.query || '';
@@ -729,6 +729,8 @@ export async function handleToolCall(call: { name: string; args: any }): Promise
                 // Minimal response — Gemini already announced the image, 
                 // don't give him text that makes him repeat it
             };
+
+        }
 
         case 'hide_image':
             console.log('[Skill] hide_image called');

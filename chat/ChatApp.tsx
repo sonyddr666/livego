@@ -12,8 +12,8 @@ import {
   IconSparkles,
   IconTrash
 } from '../components/Icons';
+import { readSessionApiKey, writeSessionApiKey } from '../utils/apiKeyStorage';
 
-const API_KEY_STORAGE_KEY = 'gemini_api_key';
 const CHAT_HISTORY_KEY = 'livego_chat_history';
 const CHAT_ACTIVE_KEY = 'livego_chat_active_session';
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
@@ -67,26 +67,6 @@ const buildContents = (messages: ChatMessage[]) => {
     role: message.role,
     parts: [{ text: message.text }]
   }));
-};
-
-const readStoredApiKey = (): string => {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
-  } catch {
-    return '';
-  }
-};
-
-const persistApiKey = (value: string) => {
-  try {
-    if (value) {
-      localStorage.setItem(API_KEY_STORAGE_KEY, value);
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-    }
-  } catch {
-    // Ignore storage errors.
-  }
 };
 
 const loadChatHistory = (): ChatSession[] => {
@@ -269,7 +249,7 @@ const ModelOption: React.FC<{
 );
 
 const ChatApp: React.FC = () => {
-  const [apiKey, setApiKey] = useState(readStoredApiKey);
+  const [apiKey, setApiKey] = useState(readSessionApiKey);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [sessions, setSessions] = useState<ChatSession[]>(() => loadChatHistory());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => readActiveSessionId());
@@ -282,7 +262,7 @@ const ChatApp: React.FC = () => {
   const [showApiKey, setShowApiKey] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const resolvedApiKey = apiKey || process.env.API_KEY || '';
+  const resolvedApiKey = apiKey;
   const modelValue = model.trim() || DEFAULT_MODEL;
   const canSend = Boolean(resolvedApiKey) && input.trim().length > 0 && !isSending;
   const isCustomModel = !PRESET_MODELS.has(modelValue);
@@ -453,7 +433,7 @@ const ChatApp: React.FC = () => {
   const handleApiKeyChange = (value: string) => {
     clearError();
     setApiKey(value);
-    persistApiKey(value);
+    writeSessionApiKey(value);
   };
 
   const handleNewChat = () => {
@@ -489,11 +469,7 @@ const ChatApp: React.FC = () => {
     setScreen('settings');
   };
 
-  const apiKeyLabel = apiKey
-    ? 'Saved'
-    : resolvedApiKey
-      ? 'Using env key'
-      : 'Not set';
+  const apiKeyLabel = apiKey ? 'Available for this tab' : 'Not set';
   const historyLabel = `${sessions.length} ${sessions.length === 1 ? 'chat' : 'chats'}`;
 
   return (
@@ -792,9 +768,9 @@ const ChatApp: React.FC = () => {
                         API key is required to send messages.
                       </p>
                     )}
-                    {resolvedApiKey && !apiKey && (
+                    {resolvedApiKey && (
                       <p className="mt-2 text-xs text-gray-500">
-                        Using env key.
+                        Kept only for this browser tab.
                       </p>
                     )}
                   </div>

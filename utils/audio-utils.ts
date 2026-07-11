@@ -14,7 +14,7 @@ export function arrayBufferToBase64(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i] ?? 0);
   }
   return btoa(binary);
 }
@@ -32,7 +32,7 @@ export async function decodeAudioData(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+      channelData[i] = (dataInt16[i * numChannels + channel] ?? 0) / 32768.0;
     }
   }
   return buffer;
@@ -62,7 +62,9 @@ export function resampleAudio(
     const fraction = srcIndex - srcIndexFloor;
 
     // Linear interpolation between samples
-    output[i] = inputData[srcIndexFloor] * (1 - fraction) + inputData[srcIndexCeil] * fraction;
+    const leftSample = inputData[srcIndexFloor] ?? 0;
+    const rightSample = inputData[srcIndexCeil] ?? leftSample;
+    output[i] = leftSample * (1 - fraction) + rightSample * fraction;
   }
 
   return output;
@@ -80,7 +82,7 @@ export function createPcmBlob(data: Float32Array, sourceSampleRate: number = 160
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
     // Clamp values to prevent overflow
-    const sample = Math.max(-1, Math.min(1, resampledData[i]));
+    const sample = Math.max(-1, Math.min(1, resampledData[i] ?? 0));
     int16[i] = sample * 32767;
   }
   return {

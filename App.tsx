@@ -15,9 +15,9 @@ import { useLiveAPI } from './hooks/useLiveAPI';
 import { useI18n } from './i18n';
 import { useInstructionPresets } from './store/instructionPresetsStore';
 import { useSettingsStore } from './store/settingsStore';
+import { readSessionApiKey, writeSessionApiKey } from './utils/apiKeyStorage';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
-const API_KEY_STORAGE_KEY = 'gemini_api_key';
 const DROPPED_SESSION_KEY = 'livego_dropped_session';
 const ACTIVE_SESSION_KEY = 'livego_active_session';
 
@@ -32,20 +32,13 @@ const App: React.FC = () => {
   // Settings State
   const [voiceName, setVoiceName] = useState<string>('Zephyr');
   // Keep for backwards compatibility but prefer presets
-  const [systemInstruction, setSystemInstruction] = useState<string>(() => t('systemInstruction.default'));
+  const [systemInstruction] = useState<string>(() => t('systemInstruction.default'));
 
-  // API Key State - Load from localStorage on mount
-  const [apiKey, setApiKey] = useState<string>(() => {
-    try {
-      return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
-    } catch (error) {
-      console.error('Failed to load API key from localStorage:', error);
-      return '';
-    }
-  });
+  // API keys are scoped to the current browser tab and never bundled at build time.
+  const [apiKey, setApiKey] = useState<string>(readSessionApiKey);
 
-  // Computed: Check if API key is available (user-configured or environment)
-  const hasApiKey = Boolean(apiKey || process.env.API_KEY);
+  // Computed: Check if a user-configured API key is available.
+  const hasApiKey = Boolean(apiKey);
 
   // History State - Load from localStorage on mount
   const [history, setHistory] = useState<HistoryItem[]>(() => {
@@ -60,13 +53,6 @@ const App: React.FC = () => {
 
   const startTimeRef = useRef<number>(0);
   const lastDisconnectRef = useRef<number>(0); // Cooldown: timestamp of last unexpected disconnect
-
-  // B4: Dropped session state
-  const [sessionDropped, setSessionDropped] = useState<boolean>(() => {
-    try {
-      return !!localStorage.getItem(DROPPED_SESSION_KEY);
-    } catch { return false; }
-  });
 
   // Save history to localStorage whenever it changes
   useEffect(() => {
@@ -105,7 +91,6 @@ const App: React.FC = () => {
             startTime: session.startTime || session.timestamp,
           };
           localStorage.setItem(DROPPED_SESSION_KEY, JSON.stringify(droppedSession));
-          setSessionDropped(true);
         }
         localStorage.removeItem(ACTIVE_SESSION_KEY);
       }
@@ -147,8 +132,7 @@ const App: React.FC = () => {
       try {
         localStorage.removeItem(DROPPED_SESSION_KEY);
         localStorage.removeItem(ACTIVE_SESSION_KEY);
-      } catch (e) { /* ignore */ }
-      setSessionDropped(false);
+      } catch { /* Storage cleanup is best-effort. */ }
       setCurrentScreen(ScreenName.HOME);
       return;
     }
@@ -185,24 +169,15 @@ const App: React.FC = () => {
     } catch (e) {
       console.error('[App] Failed to save dropped session:', e);
     }
-    setSessionDropped(true);
 
     // Navigate to home
     setCurrentScreen(ScreenName.HOME);
   }, [transcript, locale]);
 
-  // Save API key to localStorage whenever it changes
+  // Keep the API key only for the lifetime of the current browser tab.
   const handleApiKeyChange = (newApiKey: string) => {
     setApiKey(newApiKey);
-    try {
-      if (newApiKey) {
-        localStorage.setItem(API_KEY_STORAGE_KEY, newApiKey);
-      } else {
-        localStorage.removeItem(API_KEY_STORAGE_KEY);
-      }
-    } catch (error) {
-      console.error('Failed to save API key to localStorage:', error);
-    }
+    writeSessionApiKey(newApiKey);
   };
 
   const handleNavigate = (screen: ScreenName) => {
@@ -268,7 +243,6 @@ const App: React.FC = () => {
         // Clean up dropped session after injecting
         localStorage.removeItem(DROPPED_SESSION_KEY);
         localStorage.removeItem(ACTIVE_SESSION_KEY);
-        setSessionDropped(false);
       }
     } catch (e) {
       console.warn('[App] Failed to restore dropped session context:', e);
@@ -314,8 +288,7 @@ const App: React.FC = () => {
     try {
       localStorage.removeItem(ACTIVE_SESSION_KEY);
       localStorage.removeItem(DROPPED_SESSION_KEY);
-    } catch (e) { /* ignore */ }
-    setSessionDropped(false);
+    } catch { /* Storage cleanup is best-effort. */ }
 
     disconnect();
     setCurrentScreen(ScreenName.HOME);
@@ -399,8 +372,6 @@ const App: React.FC = () => {
                     onBack={() => handleNavigate(ScreenName.SETTINGS)}
                     voiceName={voiceName}
                     setVoiceName={setVoiceName}
-                    systemInstruction={systemInstruction}
-                    setSystemInstruction={setSystemInstruction}
                     apiKey={apiKey}
                     setApiKey={handleApiKeyChange}
                   />

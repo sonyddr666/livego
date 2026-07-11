@@ -71,8 +71,9 @@ export const SkillsScreenContent: React.FC<{ onBack: () => void }> = ({ onBack }
 
   // Group skills by category
   const grouped = skills.reduce<Record<string, Skill[]>>((acc, skill) => {
-    if (!acc[skill.category]) acc[skill.category] = [];
-    acc[skill.category].push(skill);
+    const categorySkills = acc[skill.category] ?? [];
+    categorySkills.push(skill);
+    acc[skill.category] = categorySkills;
     return acc;
   }, {});
 

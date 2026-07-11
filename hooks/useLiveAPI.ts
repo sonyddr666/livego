@@ -117,7 +117,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   // Track state for cleanup and logic
   const isMutedRef = useRef(false);
   const isConnectedRef = useRef(false);
-  const isProcessingToolRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
 
   // Tool results and auto-save tracking
@@ -171,7 +170,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
     // Stop all playing sources
     sourcesRef.current.forEach(source => {
-      try { source.stop(); } catch (e) { }
+      try { source.stop(); } catch { /* Source may already be stopped. */ }
     });
     sourcesRef.current.clear();
 
@@ -181,7 +180,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
     if (sessionPromiseRef.current) {
       sessionPromiseRef.current.then(session => {
-        try { session.close(); } catch (e) { }
+        try { session.close(); } catch { /* Session may already be closed. */ }
       });
       sessionPromiseRef.current = null;
     }
@@ -217,7 +216,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
         session.sendRealtimeInput({
           media: { data: base64, mimeType: 'image/jpeg' }
         });
-      } catch (e) {
+      } catch {
         isConnectedRef.current = false;
       }
     };
@@ -335,10 +334,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       console.log('[DEBUG] Starting connection...');
 
-      // Prioritize user-configured API key over environment variable
-      const apiKey = config.apiKey || process.env.API_KEY;
+      // Use only the key supplied by the user for this browser tab.
+      const apiKey = config.apiKey;
       if (!apiKey) {
-        throw new Error("API Key not found. Please configure your API key in Settings > Account or set VITE_GEMINI_API_KEY environment variable.");
+        throw new Error('API Key not found. Please configure your API key in Settings > Account.');
       }
 
       console.log('[DEBUG] API key found, creating GoogleGenAI instance...');
@@ -520,7 +519,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               const pcmBlob = createPcmBlob(dataToSend, nativeSampleRate);
               try {
                 session.sendRealtimeInput({ media: pcmBlob });
-              } catch (e) {
+              } catch {
                 // WebSocket entering CLOSING state — stop sending silently
                 isConnectedRef.current = false;
               }
@@ -608,7 +607,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         timestamp: Date.now(),
                         startTime: startTimeRef.current,
                       }));
-                    } catch (e) { /* ignore */ }
+                    } catch { /* Session snapshots are best-effort. */ }
                   }, 3000);
                   return next;
                 });
@@ -635,7 +634,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                         timestamp: Date.now(),
                         startTime: startTimeRef.current,
                       }));
-                    } catch (e) { /* ignore */ }
+                    } catch { /* Session snapshots are best-effort. */ }
                   }, 3000);
                   return next;
                 });
@@ -666,7 +665,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               audioQueueRef.current = [];
               isProcessingQueueRef.current = false;
               sourcesRef.current.forEach(src => {
-                try { src.stop(); } catch (e) { }
+                try { src.stop(); } catch { /* Source may already be stopped. */ }
               });
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
@@ -881,7 +880,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       console.error("[DEBUG] Error stack:", error instanceof Error ? error.stack : 'No stack');
       disconnect();
     }
-  }, [disconnect]);
+  }, [disconnect, processAudioQueue]);
 
   const getAnalyser = () => {
     return {
