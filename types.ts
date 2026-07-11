@@ -52,7 +52,7 @@ export interface DroppedSession {
   toolResults: ToolResult[];
   closeCode: number;
   closeReason: string;
-  pendingGhostResults: any[];
+  pendingGhostResults: ToolResult[];
   startTime: number;
 }
 

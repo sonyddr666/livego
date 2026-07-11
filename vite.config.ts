@@ -1,10 +1,9 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '.', '');
   return {
     server: {
       port: 3000,
@@ -25,18 +24,17 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      visualizer({
-        filename: './dist/stats.html',
-        open: false,
-        gzipSize: true,
-        brotliSize: true,
-      }),
+      ...(mode === 'analyze'
+        ? [
+            visualizer({
+              filename: './dist/stats.html',
+              open: false,
+              gzipSize: true,
+              brotliSize: true,
+            }),
+          ]
+        : []),
     ],
-    define: {
-      'process.env.API_KEY': JSON.stringify(
-        env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || ''
-      ),
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

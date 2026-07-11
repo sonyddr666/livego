@@ -85,7 +85,8 @@ export function useVoiceActivityDetection(options: VADOptions = {}): VADResult {
             // Calculate RMS volume
             let sum = 0;
             for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i] * dataArray[i];
+                const sample = dataArray[i] ?? 0;
+                sum += sample * sample;
             }
             const rms = Math.sqrt(sum / dataArray.length);
             setVolume(rms);

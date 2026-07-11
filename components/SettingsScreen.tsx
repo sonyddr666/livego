@@ -8,14 +8,14 @@ import type { Locale, TranslationKey } from '../i18n';
 import { useThemeStore } from '../store/themeStore';
 import { useInstructionPresets, type InstructionPreset } from '../store/instructionPresetsStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useSkillsStore, type Skill } from '../store/skillsStore';
+import { useSkillsStore } from '../store/skillsStore';
 import { SkillsScreenContent } from './SkillsScreen';
 import { APP_VERSION } from '../config/version';
 
 // Instructions Screen with Presets Component
 const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { t } = useI18n();
-    const { presets, selectedPresetId, customInstruction, addPreset, updatePreset, deletePreset, selectPreset, setCustomInstruction } = useInstructionPresets();
+    const { presets, selectedPresetId, addPreset, updatePreset, deletePreset, selectPreset } = useInstructionPresets();
     const [editingPreset, setEditingPreset] = React.useState<InstructionPreset | null>(null);
     const [isCreating, setIsCreating] = React.useState(false);
     const [newName, setNewName] = React.useState('');
@@ -455,8 +455,6 @@ interface SettingsDetailProps {
     // Props for config
     voiceName: string;
     setVoiceName: (v: string) => void;
-    systemInstruction: string;
-    setSystemInstruction: (i: string) => void;
     // API Key props
     apiKey: string;
     setApiKey: (key: string) => void;
@@ -527,7 +525,7 @@ const LanguageOption: React.FC<{
 );
 
 export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
-    screen, onBack, voiceName, setVoiceName, systemInstruction, setSystemInstruction, apiKey, setApiKey
+    screen, onBack, voiceName, setVoiceName, apiKey, setApiKey
 }) => {
     const { t, locale, setLocale } = useI18n();
     const [showApiKey, setShowApiKey] = React.useState(false);
@@ -640,7 +638,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
                                         if (apiKey.trim().length >= 39) {
                                             // Force save by calling setApiKey with trimmed value
                                             setApiKey(apiKey.trim());
-                                            alert('✅ API Key salva com sucesso!');
+                                            alert('✅ API Key disponível nesta aba!');
                                         } else if (apiKey.trim().length === 0) {
                                             setApiKey('');
                                             alert('🗑️ API Key removida');

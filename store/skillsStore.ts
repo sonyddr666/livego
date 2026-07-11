@@ -254,7 +254,7 @@ const DEFAULT_SKILLS: Skill[] = [
 ];
 
 export const useSkillsStore = create<SkillsState>()(
-  persist(
+  persist<SkillsState>(
     (set, get) => ({
       skills: DEFAULT_SKILLS,
 

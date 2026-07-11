@@ -1,30 +1,44 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img width="1200" height="475" alt="LIVEGO" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# LIVEGO
 
-This contains everything you need to run your app locally or deploy on Render.
+Aplicação web de voz e chat com Gemini, criada com React, TypeScript e Vite.
 
-View your app in AI Studio: https://ai.studio/apps/drive/13-QH5f5wa14SBfs42fc92ovZSdxFnhxE
+## Executar localmente
 
-## Run Locally
+Pré-requisito: Node.js 20 ou mais recente.
 
-**Prerequisites:**  Node.js
+```bash
+npm ci
+npm run dev
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Abra o endereço exibido pelo Vite e informe sua chave Gemini em
+`Configurações > Conta`. A chave fica apenas na sessão da aba atual e é removida
+quando a sessão do navegador termina.
 
-## Deploy on Render
+Não configure `GEMINI_API_KEY` nem `VITE_GEMINI_API_KEY` em deploys do frontend.
+Variáveis expostas pelo Vite são compiladas no bundle público do navegador.
 
-Clique no botão abaixo para fazer deploy automático no Render usando o arquivo `render.yaml` deste repositório:
+## Validação
+
+```bash
+npm run check
+```
+
+O comando executa lint, verificação TypeScript e build de produção. Para gerar o
+relatório local do bundle em `dist/stats.html`, use:
+
+```bash
+npm run analyze
+```
+
+## Deploy no Render
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sonyddr666/livego&config=render.yaml)
 
-No painel do Render, crie a variável de ambiente:
-- `GEMINI_API_KEY` → sua chave da API Gemini
-
-O Render vai rodar o build com `npm run build` e servir o app com `npm run preview` na porta 10000.
+O Render executa `npm run build` e serve a aplicação na porta configurada pelo
+arquivo `render.yaml`. A chave Gemini deve ser fornecida por cada usuário na
+interface; ela não deve ser cadastrada como variável do serviço frontend.
