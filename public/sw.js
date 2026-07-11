@@ -1,4 +1,4 @@
-const CACHE_NAME = 'livego-v1.0.16';
+const CACHE_NAME = 'livego-v1.0.17';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
