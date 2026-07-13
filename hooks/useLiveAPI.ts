@@ -129,6 +129,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const startTimeRef = useRef<number>(0);
   const [toolResults, setToolResults] = useState<ToolResult[]>([]);
 
+  // Session resumption handle — used to reconnect after unexpected drops (3.1 model feature)
+  const sessionResumptionHandleRef = useRef<string | null>(null);
+
   // Screen share state
   const screenCaptureRef = useRef<ScreenCapture | null>(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -486,7 +489,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       console.log('[DEBUG] Creating WebSocket session...');
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-3.1-flash-live-preview',
         callbacks: {
           onopen: () => {
             console.log("[DEBUG] Live Session Opened - WebSocket connected");
@@ -616,6 +619,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
             if (msgAny.serverContent?.groundingMetadata) {
               console.log('[Search] Google grounding (serverContent):', msgAny.serverContent.groundingMetadata);
+            }
+
+            // Session Resumption: save the latest handle so we can reconnect after drops
+            if (msgAny.sessionResumptionUpdate?.handle) {
+              sessionResumptionHandleRef.current = msgAny.sessionResumptionUpdate.handle;
+              console.log('[Session] Resumption handle updated');
             }
 
             // Debug: Log message types to diagnose interrupt issues
@@ -864,16 +873,21 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
             // Common codes: 1000=normal, 1008=session not found/key issue, 1011=server error/quota
             if (event?.code === 1011) {
-              console.error("[DEBUG] Server error — check API quota, model access, or setup message format");
-              showToast('Erro no servidor do Gemini.\nVerifique sua cota de API ou tente novamente.', 'warning');
+              console.error("[DEBUG] Server error — instability on gemini-3.1-flash-live-preview; session resumption will restore context");
+              showToast('Conexão caiu. Tentando reconectar com o contexto salvo...', 'warning');
             } else if (event?.code === 1008) {
               console.error("[DEBUG] Session error 1008:", event?.reason);
               const reason = (event?.reason || '').toLowerCase();
               if (reason.includes('leaked') || reason.includes('invalid') || reason.includes('unauthorized')) {
+                // Invalid key — clear resumption handle since it won't help
+                sessionResumptionHandleRef.current = null;
                 showToast('Sua API Key não funciona!\n' + (event?.reason || 'Key inválida ou bloqueada.'), 'error', 10, '👉 Toque aqui para adicionar uma Key válida');
               } else {
                 showToast('Sessão expirada ou inválida.\nTente reconectar.', 'warning');
               }
+            } else if (event?.code === 1000) {
+              // Clean close — discard resumption handle so next call starts fresh
+              sessionResumptionHandleRef.current = null;
             }
 
             // B1: If connection dropped unexpectedly (not normal close), save everything
@@ -906,10 +920,14 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          // NOTE: realtimeInputConfig with VAD sensitivity is NOT supported
-          // on gemini-2.5-flash-native-audio-preview — causes 1008 crash.
-          // Interrupt relies on: 1) low noise gate (0.002), 2) no audio muting during tools.
-          ...(tools.length > 0 && { tools })
+          // NOTE: realtimeInputConfig with VAD sensitivity is NOT supported here to keep
+          // interrupt behavior consistent — Gemini 3.1 Flash Live handles VAD server-side.
+          ...(tools.length > 0 && { tools }),
+          // Enable Session Resumption: server sends handles we can use to reconnect
+          // after unexpected drops without losing conversation context.
+          sessionResumption: sessionResumptionHandleRef.current
+            ? { handle: sessionResumptionHandleRef.current }
+            : {}
         }
       });
 
