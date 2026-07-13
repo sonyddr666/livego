@@ -17,7 +17,9 @@ interface DesktopSettingsPanelProps {
   currentVoice: string;
   setCurrentVoice: (voice: string) => void;
   connected: boolean;
+  activeScreen: ScreenName;
   onNavigate: (screen: ScreenName) => void;
+  children?: React.ReactNode;
 }
 
 const PanelItem: React.FC<{
@@ -36,7 +38,7 @@ const PanelItem: React.FC<{
   </button>
 );
 
-export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ currentVoice, setCurrentVoice, connected, onNavigate }) => {
+export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ currentVoice, setCurrentVoice, connected, activeScreen, onNavigate, children }) => {
   const { locale, setLocale } = useI18n();
   const isPortuguese = locale === 'pt-BR';
   const { searchMode, setSearchMode, screenVisionFps, setScreenVisionFps } = useSettingsStore();
@@ -44,8 +46,16 @@ export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ curr
   const { resolvedTheme, setTheme } = useThemeStore();
   const isDark = resolvedTheme === 'dark';
 
+  if (activeScreen !== ScreenName.SETTINGS) {
+    return (
+      <aside className="hidden h-full w-[360px] shrink-0 overflow-hidden border-l border-white/[0.09] bg-theme-primary text-theme-primary lg:block xl:w-[410px]">
+        {children}
+      </aside>
+    );
+  }
+
   return (
-    <aside className="hidden h-full w-[410px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.09] bg-[#0b0c10] px-5 py-5 text-white no-scrollbar xl:flex">
+    <aside className="hidden h-full w-[360px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.09] bg-[#0b0c10] px-5 py-5 text-white no-scrollbar lg:flex xl:w-[410px]">
       <div className="flex items-center justify-between">
         <h2 className="text-[17px] font-semibold">{isPortuguese ? 'Configurações' : 'Settings'}</h2>
         {connected && <span className="flex items-center gap-2 rounded-full bg-red-500/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-red-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />{isPortuguese ? 'Ao vivo' : 'Live'}</span>}

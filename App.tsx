@@ -28,6 +28,7 @@ const ACTIVE_SESSION_KEY = 'livego_active_session';
 const App: React.FC = () => {
   const { t, locale } = useI18n();
   const [currentScreen, setCurrentScreen] = useState<ScreenName>(ScreenName.HOME);
+  const [desktopPanelScreen, setDesktopPanelScreen] = useState<ScreenName>(ScreenName.SETTINGS);
 
   // Get active instruction from presets store
   const { getActiveInstruction } = useInstructionPresets();
@@ -70,7 +71,13 @@ const App: React.FC = () => {
 
   // Listen for toast action (e.g. "add valid API key") — navigate to Account screen
   useEffect(() => {
-    const handler = () => handleNavigate(ScreenName.ACCOUNT);
+    const handler = () => {
+      if (window.matchMedia('(min-width: 1024px)').matches) {
+        setDesktopPanelScreen(ScreenName.ACCOUNT);
+      } else {
+        setCurrentScreen(ScreenName.ACCOUNT);
+      }
+    };
     window.addEventListener('livego:toast_action', handler);
     return () => window.removeEventListener('livego:toast_action', handler);
   }, []);
@@ -105,6 +112,12 @@ const App: React.FC = () => {
   }, []);
 
   const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, isScreenSharing, toggleScreenShare, getAnalysers } = useLiveAPI();
+
+  useEffect(() => {
+    if (connected && desktopPanelScreen === ScreenName.ACCOUNT) {
+      setDesktopPanelScreen(ScreenName.SETTINGS);
+    }
+  }, [connected, desktopPanelScreen]);
 
   // B1: Handle unexpected disconnection — save everything
   const handleUnexpectedDisconnect = useCallback((data: {
@@ -316,6 +329,26 @@ const App: React.FC = () => {
     handleNavigate(desktopWorkspace ? ScreenName.HOME : ScreenName.SETTINGS);
   };
 
+  const handleDesktopPanelNavigate = (screen: ScreenName) => {
+    if (screen === ScreenName.HOME || screen === ScreenName.USAGE || screen === ScreenName.SETTINGS) {
+      setDesktopPanelScreen(ScreenName.SETTINGS);
+      return;
+    }
+    if (connected && screen === ScreenName.ACCOUNT) {
+      showToast(t('settings.account.apiKeySaved'), 'info');
+      return;
+    }
+    setDesktopPanelScreen(screen);
+  };
+
+  const handleResponsiveNavigate = (screen: ScreenName) => {
+    if (window.matchMedia('(min-width: 1024px)').matches) {
+      handleDesktopPanelNavigate(screen);
+    } else {
+      handleNavigate(screen);
+    }
+  };
+
   return (
     <ErrorBoundary>
       <div className="w-full h-dvh-safe bg-theme-primary lg:h-dvh lg:bg-[#090a0f] font-sans">
@@ -330,9 +363,9 @@ const App: React.FC = () => {
 
           <div className="h-full w-full lg:flex lg:min-h-0 lg:flex-1">
             <DesktopSidebar
-              currentScreen={currentScreen}
+              activeScreen={desktopPanelScreen}
               connected={connected}
-              onNavigate={handleNavigate}
+              onNavigate={handleDesktopPanelNavigate}
             />
 
             {/* Inner Screen Content */}
@@ -345,7 +378,7 @@ const App: React.FC = () => {
                 onStartCall={handleStartCall}
                 onSettings={() => handleNavigate(ScreenName.SETTINGS)}
                 hasApiKey={canStartCall}
-                onConfigureApiKey={() => handleNavigate(ScreenName.ACCOUNT)}
+                onConfigureApiKey={() => handleResponsiveNavigate(ScreenName.ACCOUNT)}
                 isConnecting={isConnecting}
               />
             )}
@@ -411,8 +444,35 @@ const App: React.FC = () => {
                 currentVoice={voiceName}
                 setCurrentVoice={setVoiceName}
                 connected={connected}
-                onNavigate={handleNavigate}
-              />
+                activeScreen={desktopPanelScreen}
+                onNavigate={handleDesktopPanelNavigate}
+              >
+                <Suspense fallback={<ScreenLoader />}>
+                  {desktopPanelScreen === ScreenName.HISTORY && (
+                    <HistoryScreen history={history} onBack={() => setDesktopPanelScreen(ScreenName.SETTINGS)} onDelete={deleteHistoryItem} />
+                  )}
+                  {[
+                    ScreenName.ACCOUNT,
+                    ScreenName.NOTIFICATIONS,
+                    ScreenName.PRIVACY,
+                    ScreenName.HELP,
+                    ScreenName.ABOUT,
+                    ScreenName.VOICE,
+                    ScreenName.INSTRUCTIONS,
+                    ScreenName.LANGUAGE,
+                    ScreenName.SKILLS,
+                  ].includes(desktopPanelScreen) && (
+                    <SettingsDetailScreen
+                      screen={desktopPanelScreen}
+                      onBack={() => setDesktopPanelScreen(ScreenName.SETTINGS)}
+                      voiceName={voiceName}
+                      setVoiceName={setVoiceName}
+                      apiKey={apiKey}
+                      setApiKey={handleApiKeyChange}
+                    />
+                  )}
+                </Suspense>
+              </DesktopSettingsPanel>
             )}
           </div>
         </div>

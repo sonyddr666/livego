@@ -13,7 +13,7 @@ import {
 import { useI18n } from '../i18n';
 
 interface DesktopSidebarProps {
-  currentScreen: ScreenName;
+  activeScreen: ScreenName;
   connected: boolean;
   onNavigate: (screen: ScreenName) => void;
 }
@@ -32,7 +32,7 @@ const LogoutIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ currentScreen, connected, onNavigate }) => {
+export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ activeScreen, connected, onNavigate }) => {
   const { locale } = useI18n();
   const isPortuguese = locale === 'pt-BR';
 
@@ -51,9 +51,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ currentScreen, c
 
   const renderItem = (item: typeof primaryNavigation[number]) => {
     const isHomeTarget = item.screen === ScreenName.HOME || item.screen === ScreenName.USAGE;
-    const active = isHomeTarget
-      ? currentScreen === ScreenName.HOME || currentScreen === ScreenName.USAGE
-      : currentScreen === item.screen;
+    const active = isHomeTarget ? activeScreen === ScreenName.SETTINGS : activeScreen === item.screen;
     const disabled = connected && item.screen === ScreenName.ACCOUNT;
     const Icon = item.icon;
 

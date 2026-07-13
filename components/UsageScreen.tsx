@@ -101,7 +101,7 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
 
       {/* BUSCANDO tag — shows while ghost_search is running */}
       {activeSearches.length > 0 && (
-        <div className="absolute top-24 left-0 right-0 lg:right-[390px] flex justify-center z-30 pointer-events-none animate-in">
+        <div className="absolute top-24 left-0 right-0 2xl:right-[390px] flex justify-center z-30 pointer-events-none animate-in">
           <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600/80 backdrop-blur-md border border-purple-400/30 shadow-lg shadow-purple-500/20">
             <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-xs font-bold text-white uppercase tracking-wider">🔍 {isPortuguese ? 'Buscando' : 'Searching'}</span>
@@ -130,7 +130,7 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Session workspace */}
-      <div className="flex-1 min-h-0 relative z-10 w-full mb-20 lg:mb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:px-6 lg:pb-6">
+      <div className="flex-1 min-h-0 relative z-10 w-full mb-20 lg:mb-0 lg:px-6 lg:pb-6 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_360px] 2xl:gap-6">
         <div className="h-full flex flex-col items-center justify-center">
           <div className="mb-4 text-center px-8">
             <h2 className="text-2xl lg:text-3xl font-semibold text-white tracking-tight">{t('usage.listening')}</h2>
@@ -140,7 +140,7 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
           <Visualizer analysers={getAnalysers()} isMuted={isMuted} />
         </div>
 
-        <aside className="hidden lg:flex min-h-0 flex-col rounded-[28px] border border-white/10 bg-white/[0.035] backdrop-blur-xl overflow-hidden shadow-2xl">
+        <aside className="hidden 2xl:flex min-h-0 flex-col rounded-[28px] border border-white/10 bg-white/[0.035] backdrop-blur-xl overflow-hidden shadow-2xl">
           <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-300">
@@ -178,7 +178,7 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Captions Overlay (Fixed position above controls) */}
-      <div className={`absolute bottom-[200px] left-0 right-0 px-6 flex lg:hidden justify-center z-20 pointer-events-none transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute bottom-[200px] left-0 right-0 px-6 flex 2xl:hidden justify-center z-20 pointer-events-none transition-opacity duration-300 ${caption ? 'opacity-100' : 'opacity-0'}`}>
         <div
           ref={mobileCaptionRef}
           className="glass-dark rounded-xl px-5 py-3 max-w-[85%] md:max-w-[320px] pointer-events-auto max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth"
@@ -192,7 +192,7 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
       </div>
 
       {/* Controls Dock - Fixed at bottom */}
-      <div className="px-8 pb-10 relative z-30 lg:absolute lg:left-8 lg:right-[392px] lg:bottom-8 lg:p-0">
+      <div className="px-8 pb-10 relative z-30 lg:absolute lg:left-8 lg:right-8 lg:bottom-8 lg:p-0 2xl:right-[392px]">
         <div className="glass-dark rounded-3xl p-5 flex justify-between items-center shadow-2xl lg:max-w-[560px] lg:mx-auto lg:px-8">
 
           {/* Mute Toggle */}
