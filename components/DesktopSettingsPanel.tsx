@@ -48,7 +48,7 @@ export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ curr
 
   if (activeScreen !== ScreenName.SETTINGS) {
     return (
-      <aside className="hidden h-full w-[360px] shrink-0 overflow-hidden border-l border-white/[0.09] bg-theme-primary text-theme-primary lg:block xl:w-[410px]">
+      <aside className="relative hidden h-full w-[360px] shrink-0 overflow-hidden border-l border-white/[0.09] bg-theme-primary text-theme-primary lg:block xl:w-[410px]">
         {children}
       </aside>
     );

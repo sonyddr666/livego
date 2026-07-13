@@ -447,7 +447,14 @@ const App: React.FC = () => {
                 activeScreen={desktopPanelScreen}
                 onNavigate={handleDesktopPanelNavigate}
               >
-                <Suspense fallback={<ScreenLoader />}>
+                <Suspense fallback={
+                  <div className="flex h-full w-full items-center justify-center bg-theme-primary" role="status" aria-live="polite">
+                    <div className="flex items-center gap-3 rounded-xl border border-theme bg-theme-secondary px-4 py-3 shadow-sm">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-theme border-t-indigo-500" />
+                      <span className="text-xs font-medium text-theme-secondary">{locale === 'pt-BR' ? 'Carregando painel...' : 'Loading panel...'}</span>
+                    </div>
+                  </div>
+                }>
                   {desktopPanelScreen === ScreenName.HISTORY && (
                     <HistoryScreen history={history} onBack={() => setDesktopPanelScreen(ScreenName.SETTINGS)} onDelete={deleteHistoryItem} />
                   )}
