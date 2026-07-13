@@ -103,6 +103,8 @@ app.use('/api/ghost', async (request, response) => {
     // coming from the upstream service itself.
     Origin: 'https://api.ghost1.cloud',
     Referer: 'https://api.ghost1.cloud/',
+    'X-Forwarded-Host': 'api.ghost1.cloud',
+    'X-Forwarded-Proto': 'https',
   };
 
   try {
