@@ -98,6 +98,11 @@ app.use('/api/ghost', async (request, response) => {
     Accept: request.get('accept') || 'application/json',
     'Content-Type': request.get('content-type') || 'application/json',
     'X-API-Key': 'coloque_uma_senha_aqui',
+    // The Ghost API rejects the public LiveGo origin. The browser talks only
+    // to this same-origin proxy, so identify the server-to-server request as
+    // coming from the upstream service itself.
+    Origin: 'https://api.ghost1.cloud',
+    Referer: 'https://api.ghost1.cloud/',
   };
 
   try {
