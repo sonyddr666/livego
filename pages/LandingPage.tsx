@@ -9,17 +9,17 @@ type LandingLocale = 'pt-BR' | 'en';
 const copy = {
   'pt-BR': {
     nav: { capabilities: 'Recursos', experience: 'Experiência', privacy: 'Privacidade', open: 'Abrir LiveGo' },
-    eyebrow: 'CONVERSAS COM IA, SEM ATRITO',
-    titleStart: 'Uma IA que conversa',
-    titleAccent: 'no seu ritmo.',
-    hero: 'Fale naturalmente, compartilhe contexto e use ferramentas inteligentes em uma experiência de voz feita para acompanhar você.',
-    start: 'Começar agora',
+    eyebrow: 'LIVEGO · VOZ EM TEMPO REAL',
+    titleStart: 'Oi, eu sou a LiveGo.',
+    titleAccent: 'Vamos conversar?',
+    hero: 'Equipada com Gemini Live, eu converso por voz em tempo real, entendo seu contexto e uso ferramentas quando você precisar.',
+    start: 'Começar uma conversa',
     github: 'Ver no GitHub',
-    availability: 'Acesso instantâneo quando o serviço estiver disponível. Se necessário, conecte sua própria chave Gemini.',
+    availability: 'Você controla o microfone e a tela. Se usar uma chave pessoal, ela permanece somente nesta aba.',
     live: 'AO VIVO',
     listening: 'Ouvindo você',
-    active: 'Gemini Live conectado',
-    transcript: 'Posso pesquisar, entender seu contexto e responder por voz em tempo real.',
+    active: 'LiveGo conectada · Gemini Live',
+    transcript: 'Sou a LiveGo. Posso conversar, pesquisar e entender seu contexto em tempo real.',
     featureEyebrow: 'MAIS DO QUE UM CHAT',
     featureTitle: 'Uma conversa que consegue agir.',
     featureBody: 'O LiveGo reúne voz, memória local e ferramentas em uma interface simples, sem transformar a conversa em um painel complicado.',
@@ -40,24 +40,24 @@ const copy = {
     privacyTitle: 'Sua chave não precisa morar no navegador.',
     privacyBody: 'Quando o LiveGo oferece acesso pelo próprio serviço, o navegador recebe apenas uma credencial temporária. Se esse acesso não estiver disponível, você pode usar sua chave Gemini, mantida somente durante a sessão da aba.',
     privacyPoints: ['Token temporário e de uso único', 'Chave pessoal limitada à sessão da aba', 'Conexão direta com o Gemini Live'],
-    finalTitle: 'Pronto para uma conversa mais natural?',
-    finalBody: 'Abra o LiveGo e transforme sua voz na interface.',
-    footer: 'Conversas por voz em tempo real, com contexto e ferramentas.',
+    finalTitle: 'Pronto para conversar com a LiveGo?',
+    finalBody: 'Comece uma conversa por voz em tempo real, com tecnologia Gemini Live.',
+    footer: 'LiveGo: conversas por voz em tempo real, com contexto e ferramentas.',
     language: 'Idioma',
   },
   en: {
     nav: { capabilities: 'Features', experience: 'Experience', privacy: 'Privacy', open: 'Open LiveGo' },
-    eyebrow: 'FRICTIONLESS AI CONVERSATIONS',
-    titleStart: 'An AI that speaks',
-    titleAccent: 'at your pace.',
-    hero: 'Speak naturally, share context, and use intelligent tools in a voice experience designed to keep up with you.',
-    start: 'Get started',
+    eyebrow: 'LIVEGO · REAL-TIME VOICE',
+    titleStart: "Hi, I'm LiveGo.",
+    titleAccent: 'Ready to talk?',
+    hero: 'Powered by Gemini Live, I talk with you in real time, understand your context, and use tools whenever you need them.',
+    start: 'Start a conversation',
     github: 'View on GitHub',
-    availability: 'Instant access when the service is available. If needed, connect your own Gemini API key.',
+    availability: 'You control the microphone and screen. If you use a personal key, it stays only in this browser tab.',
     live: 'LIVE',
     listening: 'Listening to you',
-    active: 'Gemini Live connected',
-    transcript: 'I can search, understand your context, and answer by voice in real time.',
+    active: 'LiveGo connected · Powered by Gemini',
+    transcript: "I'm LiveGo. I can talk, search, and understand your context in real time.",
     featureEyebrow: 'MORE THAN A CHAT',
     featureTitle: 'A conversation that can take action.',
     featureBody: 'LiveGo brings voice, local memory, and tools together in a focused interface without turning the conversation into a complicated dashboard.',
@@ -78,9 +78,9 @@ const copy = {
     privacyTitle: 'Your key does not have to live in the browser.',
     privacyBody: 'When LiveGo provides service access, the browser receives only a temporary credential. If that access is unavailable, you can use your Gemini key, kept only for the lifetime of the browser tab.',
     privacyPoints: ['Short-lived, single-use token', 'Personal key scoped to the current tab', 'Direct connection to Gemini Live'],
-    finalTitle: 'Ready for a more natural conversation?',
-    finalBody: 'Open LiveGo and turn your voice into the interface.',
-    footer: 'Real-time voice conversations with context and tools.',
+    finalTitle: 'Ready to talk with LiveGo?',
+    finalBody: 'Start a real-time voice conversation, powered by Gemini.',
+    footer: 'LiveGo: real-time voice conversations with context and tools.',
     language: 'Language',
   },
 } as const;
@@ -168,11 +168,11 @@ export const LandingPage: React.FC = () => {
   React.useEffect(() => {
     const isPortuguese = landingLocale === 'pt-BR';
     document.title = isPortuguese
-      ? 'LIVEGO — Converse com IA em tempo real'
-      : 'LIVEGO — Real-time voice AI conversations';
+      ? 'LIVEGO — Converse por voz em tempo real'
+      : 'LIVEGO — Real-time voice conversations';
     const description = isPortuguese
-      ? 'Converse por voz com uma IA em tempo real. Contexto, ferramentas e uma experiência natural com Gemini Live.'
-      : 'Talk to AI by voice in real time. Context, tools, and a natural experience powered by Gemini Live.';
+      ? 'Conheça a LiveGo: conversas por voz em tempo real, com contexto, ferramentas e tecnologia Gemini Live.'
+      : 'Meet LiveGo: real-time voice conversations with context, tools, and Gemini Live technology.';
     document.querySelector('meta[name="description"]')?.setAttribute('content', description);
     document.querySelector('meta[property="og:description"]')?.setAttribute('content', description);
     document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', description);

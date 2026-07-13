@@ -54,7 +54,9 @@ GHOST-SEARCH (ghost_search):
 - Use focus="wolfram" para calculos matematicos
 - Use model="deep_research" para analises completas
 - Quando o usuario pedir pesquisa profunda, analise detalhada, ou mencionar "ghost search", use ghost_search
-- Aguarde o resultado da funcao antes de responder; as tools deste modelo sao sincronas
+- A funcao confirma imediatamente que a busca foi iniciada. Continue conversando normalmente enquanto ela roda
+- O resultado chegara depois em uma mensagem interna iniciada por [GHOST_SEARCH_RESULT]
+- Essa mensagem interna nao e uma fala do usuario. Quando recebe-la, informe brevemente que a pesquisa terminou e use o resultado
 - Se ghost_search falhar, use Google Search como alternativa
 - Resuma a resposta de forma natural, nao leia o texto inteiro
 
@@ -121,6 +123,10 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const isMutedRef = useRef(false);
   const isConnectedRef = useRef(false);
   const currentSpeakerRef = useRef<'user' | 'gemini' | null>(null);
+  const isModelRespondingRef = useRef(false);
+  const lastInputActivityAtRef = useRef(0);
+  const pendingGhostDeliveriesRef = useRef<string[]>([]);
+  const ghostDeliveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Tool results and auto-save tracking
   const toolResultsRef = useRef<ToolResult[]>([]);
@@ -137,6 +143,34 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  const flushPendingGhostDeliveries = useCallback(() => {
+    if (!isConnectedRef.current || !sessionRef.current || pendingGhostDeliveriesRef.current.length === 0) {
+      return;
+    }
+
+    const userRecentlySpoke = Date.now() - lastInputActivityAtRef.current < 1200;
+    if (isModelRespondingRef.current || userRecentlySpoke) {
+      if (ghostDeliveryTimerRef.current) clearTimeout(ghostDeliveryTimerRef.current);
+      ghostDeliveryTimerRef.current = setTimeout(flushPendingGhostDeliveries, 500);
+      return;
+    }
+
+    const delivery = pendingGhostDeliveriesRef.current.shift();
+    if (!delivery) return;
+
+    try {
+      // Gemini 3.1 does not provide NON_BLOCKING tools. Feed the completed
+      // background result back as internal realtime context during a safe pause.
+      isModelRespondingRef.current = true;
+      currentSpeakerRef.current = null;
+      sessionRef.current.sendRealtimeInput({ text: delivery });
+    } catch (error) {
+      isModelRespondingRef.current = false;
+      pendingGhostDeliveriesRef.current.unshift(delivery);
+      console.error('[Tool] Failed to deliver background Ghost result:', error);
+    }
+  }, []);
 
   const disconnect = useCallback(() => {
     // Stop screen capture if active
@@ -193,6 +227,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     setVolume(0);
     setIsMuted(false);
     currentSpeakerRef.current = null;
+    isModelRespondingRef.current = false;
+    pendingGhostDeliveriesRef.current = [];
+    if (ghostDeliveryTimerRef.current) {
+      clearTimeout(ghostDeliveryTimerRef.current);
+      ghostDeliveryTimerRef.current = null;
+    }
     // Don't reset transcript here — it's needed for history save
     // transcriptRef.current is reset when starting a new connection
   }, []);
@@ -635,6 +675,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text) {
+                lastInputActivityAtRef.current = Date.now();
                 const isNewTurn = currentSpeakerRef.current !== 'user';
                 currentSpeakerRef.current = 'user';
                 setTranscript(prev => {
@@ -662,6 +703,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             if (message.serverContent?.outputTranscription) {
               const text = message.serverContent.outputTranscription.text;
               if (text) {
+                isModelRespondingRef.current = true;
                 const isNewTurn = currentSpeakerRef.current !== 'gemini';
                 currentSpeakerRef.current = 'gemini';
                 setTranscript(prev => {
@@ -687,6 +729,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
             // Handle Audio Output - Add to queue instead of processing directly
             if (audioChunks.length > 0 && outputAudioContextRef.current) {
+              isModelRespondingRef.current = true;
               // New audio chunk = new response, reset interrupt flag
               isInterruptedRef.current = false;
 
@@ -714,6 +757,11 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               nextStartTimeRef.current = 0;
             }
 
+            if (message.serverContent?.turnComplete) {
+              isModelRespondingRef.current = false;
+              flushPendingGhostDeliveries();
+            }
+
             // Handle Tool Calls (Function Calling)
             const toolCallMessage = (message as unknown as { toolCall?: ToolCallMessage }).toolCall;
             if (toolCallMessage && config.enableAdvancedFeatures) {
@@ -730,41 +778,83 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                       for (const call of functionCalls) {
                         console.log('[Tool] Function called:', call.name, call.args);
 
-                        // Gemini 3.1 supports synchronous function calling only.
+                        // Gemini 3.1 does not support native NON_BLOCKING calls. Acknowledge
+                        // immediately and emulate background delivery on the client so the
+                        // voice conversation can continue while Ghost Search is running.
                         if (call.name === 'ghost_search') {
-                          console.log('[Tool] Ghost Search: waiting for synchronous result');
+                          console.log('[Tool] Ghost Search: acknowledging immediately, running in background');
 
                           // Dispatch event so UI shows BUSCANDO tag
                           window.dispatchEvent(new CustomEvent('livego:search_active', {
                             detail: { query: (call.args as any)?.query || '' }
                           }));
-                          
-                          const ghostCallArgs = call.args as any;
-                          const ghostResult = await handleToolCall(call as FunctionCall);
-                          console.log('[Tool] Ghost Search synchronous result arrived:', ghostResult?.ok);
 
-                            // Dispatch event so UI hides BUSCANDO tag
+                          const ghostCallArgs = call.args as any;
+                          functionResponses.push({
+                            id: call.id || '',
+                            name: call.name || '',
+                            response: {
+                              output: {
+                                ok: true,
+                                status: 'searching_in_background',
+                                query: ghostCallArgs?.query || '',
+                                message: 'A busca foi iniciada. Continue a conversa; o resultado sera entregue automaticamente quando estiver pronto.',
+                              },
+                            },
+                          });
+
+                          void handleToolCall(call as FunctionCall).then(ghostResult => {
+                            console.log('[Tool] Ghost Search background result arrived:', ghostResult?.ok);
+
                             window.dispatchEvent(new CustomEvent('livego:search_done', {
                               detail: { query: ghostCallArgs?.query || '', ok: ghostResult?.ok || false }
                             }));
-                            
+
                             // B2: Save tool result
                             const toolResult: ToolResult = {
                               toolName: 'ghost_search',
                               query: ghostCallArgs?.query || '',
                               timestamp: Date.now(),
-                              answer: ghostResult?.answer?.substring(0, 2000) || '',
-                              citations: ghostResult?.citations || [],
+                              answer: String(ghostResult?.answer || '').substring(0, 2000),
+                              citations: Array.isArray(ghostResult?.citations) ? ghostResult.citations : [],
                               ok: ghostResult?.ok || false,
                             };
                             toolResultsRef.current.push(toolResult);
                             setToolResults([...toolResultsRef.current]);
 
-                            functionResponses.push({
-                              id: call.id || '',
-                              name: call.name || '',
-                              response: ghostResult
-                            });
+                            const compactGhostResult = ghostResult?.ok
+                              ? {
+                                  ok: true,
+                                  query: ghostCallArgs?.query || '',
+                                  answer: String(ghostResult.answer || '').slice(0, 6000),
+                                  citations: Array.isArray(ghostResult.citations)
+                                    ? ghostResult.citations.slice(0, 5)
+                                    : [],
+                                }
+                              : {
+                                  ok: false,
+                                  query: ghostCallArgs?.query || '',
+                                  error: String(ghostResult?.error || 'Ghost Search failed'),
+                                };
+
+                            pendingGhostDeliveriesRef.current.push(
+                              `[GHOST_SEARCH_RESULT]\n${JSON.stringify(compactGhostResult)}`
+                            );
+                            flushPendingGhostDeliveries();
+                          }).catch(error => {
+                            console.error('[Tool] Ghost Search background execution failed:', error);
+                            window.dispatchEvent(new CustomEvent('livego:search_done', {
+                              detail: { query: ghostCallArgs?.query || '', ok: false }
+                            }));
+                            pendingGhostDeliveriesRef.current.push(
+                              `[GHOST_SEARCH_RESULT]\n${JSON.stringify({
+                                ok: false,
+                                query: ghostCallArgs?.query || '',
+                                error: String(error instanceof Error ? error.message : error),
+                              })}`
+                            );
+                            flushPendingGhostDeliveries();
+                          });
 
                           continue;
                         }
@@ -800,6 +890,20 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                       }
                     } catch (error) {
                       console.error('[Tool] execution error:', error);
+
+                      // Blocking function calls must always receive a response. Without
+                      // this fallback Gemini remains waiting and the live conversation stalls.
+                      const fallbackResponses: FunctionResponseItem[] = functionCalls.map(call => ({
+                        id: call.id || '',
+                        name: call.name || '',
+                        response: {
+                          error: String(error instanceof Error ? error.message : error),
+                        },
+                      }));
+
+                      if (fallbackResponses.length > 0 && isConnectedRef.current && sessionRef.current) {
+                        sessionRef.current.sendToolResponse({ functionResponses: fallbackResponses });
+                      }
                     }
                   })();
                 }
@@ -883,7 +987,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       console.error("[DEBUG] Error stack:", error instanceof Error ? error.stack : 'No stack');
       disconnect();
     }
-  }, [disconnect, processAudioQueue]);
+  }, [disconnect, flushPendingGhostDeliveries, processAudioQueue]);
 
   const getAnalyser = () => {
     return {
