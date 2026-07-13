@@ -98,13 +98,10 @@ app.use('/api/ghost', async (request, response) => {
     Accept: request.get('accept') || 'application/json',
     'Content-Type': request.get('content-type') || 'application/json',
     'X-API-Key': 'coloque_uma_senha_aqui',
-    // The Ghost API rejects the public LiveGo origin. The browser talks only
-    // to this same-origin proxy, so identify the server-to-server request as
-    // coming from the upstream service itself.
-    Origin: 'https://api.ghost1.cloud',
-    Referer: 'https://api.ghost1.cloud/',
-    'X-Forwarded-Host': 'api.ghost1.cloud',
-    'X-Forwarded-Proto': 'https',
+    // Do not propagate the browser origin to this server-to-server request.
+    // Ghost accepts authenticated requests without an Origin header, while
+    // Render/Cloudflare can rewrite forwarded host metadata and cause a 403.
+    Origin: '',
   };
 
   try {
