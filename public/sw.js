@@ -1,4 +1,4 @@
-const CACHE_NAME = 'livego-v1.0.18';
+const CACHE_NAME = 'livego-v1.0.19';
 const OFFLINE_STATE_CACHE = 'livego-offline-state';
 const OFFLINE_START_REQUEST = '/__livego_offline_start__';
 const OFFLINE_TIMEOUT_MS = 24 * 60 * 60 * 1000;

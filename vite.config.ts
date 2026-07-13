@@ -1,7 +1,23 @@
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import { visualizer } from 'rollup-plugin-visualizer';
+
+const appSpaRoutePlugin = (): Plugin => ({
+  name: 'livego-app-spa-route',
+  configureServer(server) {
+    server.middlewares.use((request, _response, next) => {
+      const pathname = request.url?.split('?')[0];
+
+      // On case-insensitive filesystems, Vite resolves `/app` to `App.tsx`.
+      // Rewrite browser navigations before Vite's file-serving middleware runs.
+      if (pathname === '/app' || pathname?.startsWith('/app/')) {
+        request.url = '/index.html';
+      }
+      next();
+    });
+  },
+});
 
 export default defineConfig(({ mode }) => {
   return {
@@ -27,6 +43,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ['.onrender.com', 'chat.livego.dev', '.livego.dev'],
     },
     plugins: [
+      appSpaRoutePlugin(),
       react(),
       ...(mode === 'analyze'
         ? [
