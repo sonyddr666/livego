@@ -54,7 +54,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ currentScreen, c
     const active = isHomeTarget
       ? currentScreen === ScreenName.HOME || currentScreen === ScreenName.USAGE
       : currentScreen === item.screen;
-    const disabled = connected && !isHomeTarget;
+    const disabled = connected && item.screen === ScreenName.ACCOUNT;
     const Icon = item.icon;
 
     return (

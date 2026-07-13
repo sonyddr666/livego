@@ -15,6 +15,8 @@ import {
 
 interface DesktopSettingsPanelProps {
   currentVoice: string;
+  setCurrentVoice: (voice: string) => void;
+  connected: boolean;
   onNavigate: (screen: ScreenName) => void;
 }
 
@@ -24,8 +26,9 @@ const PanelItem: React.FC<{
   icon: React.ReactNode;
   color: string;
   onClick: () => void;
-}> = ({ label, value, icon, color, onClick }) => (
-  <button type="button" onClick={onClick} className="flex w-full items-center gap-3 border-b border-white/[0.07] px-3 py-3 text-left last:border-b-0 hover:bg-white/[0.04]">
+  disabled?: boolean;
+}> = ({ label, value, icon, color, onClick, disabled = false }) => (
+  <button type="button" onClick={onClick} disabled={disabled} title={disabled ? 'Disponível após encerrar a conversa' : undefined} className={`flex w-full items-center gap-3 border-b border-white/[0.07] px-3 py-3 text-left last:border-b-0 ${disabled ? 'cursor-not-allowed opacity-35' : 'hover:bg-white/[0.04]'}`}>
     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-lg ${color}`}>{icon}</span>
     <span className="flex-1 text-[13px] font-medium text-zinc-200">{label}</span>
     {value && <span className="max-w-[105px] truncate text-[11px] text-zinc-500">{value}</span>}
@@ -33,8 +36,8 @@ const PanelItem: React.FC<{
   </button>
 );
 
-export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ currentVoice, onNavigate }) => {
-  const { locale } = useI18n();
+export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ currentVoice, setCurrentVoice, connected, onNavigate }) => {
+  const { locale, setLocale } = useI18n();
   const isPortuguese = locale === 'pt-BR';
   const { searchMode, setSearchMode, screenVisionFps, setScreenVisionFps } = useSettingsStore();
   const enabledSkills = useSkillsStore(state => state.skills.filter(skill => skill.enabled).length);
@@ -43,13 +46,22 @@ export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ curr
 
   return (
     <aside className="hidden h-full w-[410px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.09] bg-[#0b0c10] px-5 py-5 text-white no-scrollbar xl:flex">
-      <h2 className="text-[17px] font-semibold">{isPortuguese ? 'Configurações' : 'Settings'}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-[17px] font-semibold">{isPortuguese ? 'Configurações' : 'Settings'}</h2>
+        {connected && <span className="flex items-center gap-2 rounded-full bg-red-500/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-red-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />{isPortuguese ? 'Ao vivo' : 'Live'}</span>}
+      </div>
       <div className="mt-4 h-px bg-white/[0.09]" />
 
       <section className="mt-4">
         <h3 className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">{isPortuguese ? 'Inteligência' : 'Intelligence'}</h3>
         <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.09] bg-white/[0.025]">
-          <PanelItem label={isPortuguese ? 'Voz' : 'Voice'} value={currentVoice} icon={<IconMic className="h-4 w-4" />} color="bg-gradient-to-br from-indigo-500 to-violet-500" onClick={() => onNavigate(ScreenName.VOICE)} />
+          <div className="flex items-center gap-3 border-b border-white/[0.07] px-3 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white"><IconMic className="h-4 w-4" /></span>
+            <label htmlFor="desktop-voice" className="flex-1 text-[13px] font-medium text-zinc-200">{isPortuguese ? 'Voz' : 'Voice'}</label>
+            <select id="desktop-voice" value={currentVoice} onChange={event => setCurrentVoice(event.target.value)} className="rounded-lg border border-white/10 bg-[#111318] px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-indigo-500">
+              {['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'].map(voice => <option key={voice} value={voice}>{voice}</option>)}
+            </select>
+          </div>
           <PanelItem label={isPortuguese ? 'Instruções do sistema' : 'System instructions'} icon={<IconSparkles className="h-4 w-4" />} color="bg-gradient-to-br from-pink-500 to-rose-500" onClick={() => onNavigate(ScreenName.INSTRUCTIONS)} />
           <PanelItem label="Skills" value={`${enabledSkills} ${isPortuguese ? 'ativas' : 'active'}`} icon={<IconSparkles className="h-4 w-4" />} color="bg-gradient-to-br from-amber-400 to-orange-500" onClick={() => onNavigate(ScreenName.SKILLS)} />
         </div>
@@ -83,9 +95,16 @@ export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ curr
       <section className="mt-4">
         <h3 className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">{isPortuguese ? 'Geral' : 'General'}</h3>
         <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.09] bg-white/[0.025]">
-          <PanelItem label={isPortuguese ? 'Conta' : 'Account'} icon={<IconUser className="h-4 w-4" />} color="bg-gradient-to-br from-blue-500 to-indigo-500" onClick={() => onNavigate(ScreenName.ACCOUNT)} />
+          <PanelItem label={isPortuguese ? 'Conta' : 'Account'} value={connected ? (isPortuguese ? 'Bloqueada em chamada' : 'Locked during call') : undefined} disabled={connected} icon={<IconUser className="h-4 w-4" />} color="bg-gradient-to-br from-blue-500 to-indigo-500" onClick={() => onNavigate(ScreenName.ACCOUNT)} />
           <PanelItem label={isPortuguese ? 'Histórico' : 'History'} icon={<IconClock className="h-4 w-4" />} color="bg-gradient-to-br from-emerald-400 to-teal-500" onClick={() => onNavigate(ScreenName.HISTORY)} />
-          <PanelItem label={isPortuguese ? 'Idioma' : 'Language'} value={isPortuguese ? 'Português (Brasil)' : 'English'} icon={<IconGlobe className="h-4 w-4" />} color="bg-gradient-to-br from-green-400 to-emerald-500" onClick={() => onNavigate(ScreenName.LANGUAGE)} />
+          <div className="flex items-center gap-3 px-3 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-400 to-emerald-500 text-white"><IconGlobe className="h-4 w-4" /></span>
+            <span className="flex-1 text-[13px] font-medium text-zinc-200">{isPortuguese ? 'Idioma' : 'Language'}</span>
+            <div className="flex rounded-lg border border-white/10 bg-[#111318] p-0.5 text-[9px] font-bold">
+              <button type="button" onClick={() => setLocale('pt-BR')} className={`rounded-md px-2 py-1 ${isPortuguese ? 'bg-emerald-500 text-white' : 'text-zinc-500'}`}>PT</button>
+              <button type="button" onClick={() => setLocale('en')} className={`rounded-md px-2 py-1 ${!isPortuguese ? 'bg-emerald-500 text-white' : 'text-zinc-500'}`}>EN</button>
+            </div>
+          </div>
         </div>
       </section>
 

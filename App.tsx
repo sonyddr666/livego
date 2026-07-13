@@ -318,17 +318,17 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="w-full h-dvh-safe md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary lg:block lg:h-dvh lg:min-h-0 lg:bg-[#090a0f] font-sans">
+      <div className="w-full h-dvh-safe bg-theme-primary lg:h-dvh lg:bg-[#090a0f] font-sans">
         {/* 
           Responsive Container:
           - Mobile: Full screen, no padding, no border, no radius
           - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame)
         */}
-        <div className="w-full h-full md:max-w-[390px] md:h-[844px] lg:flex lg:flex-col lg:max-w-none lg:h-dvh relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black lg:rounded-none lg:border-0 lg:bg-[#090a0f] lg:shadow-none">
+        <div className="w-full h-full lg:flex lg:flex-col lg:h-dvh relative overflow-hidden lg:bg-[#090a0f]">
 
           <DesktopTopBar />
 
-          <div className="flex min-h-0 flex-1">
+          <div className="h-full w-full lg:flex lg:min-h-0 lg:flex-1">
             <DesktopSidebar
               currentScreen={currentScreen}
               connected={connected}
@@ -336,7 +336,7 @@ const App: React.FC = () => {
             />
 
             {/* Inner Screen Content */}
-            <div className="min-w-0 flex-1 h-full bg-theme-secondary overflow-hidden md:rounded-[32px] lg:rounded-none relative">
+            <div className="min-w-0 flex-1 h-full bg-theme-secondary overflow-hidden relative">
             {/* Toast notification — inside the phone frame */}
             <Toast />
 
@@ -406,8 +406,13 @@ const App: React.FC = () => {
             </Suspense>
             </div>
 
-            {currentScreen === ScreenName.HOME && !connected && (
-              <DesktopSettingsPanel currentVoice={voiceName} onNavigate={handleNavigate} />
+            {(currentScreen === ScreenName.HOME || currentScreen === ScreenName.USAGE) && (
+              <DesktopSettingsPanel
+                currentVoice={voiceName}
+                setCurrentVoice={setVoiceName}
+                connected={connected}
+                onNavigate={handleNavigate}
+              />
             )}
           </div>
         </div>
