@@ -272,16 +272,17 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
 
     return (
         <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
-            <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
-                <button type="button" onClick={onBack} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
+            <div className="flex items-center px-6 pt-6 pb-4 lg:px-10 lg:pt-8 lg:pb-6 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+                <button type="button" onClick={onBack} className="p-2 -ml-2 lg:hidden text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
                     <IconChevronLeft className="w-6 h-6" />
                 </button>
-                <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
+                <h1 className="flex-1 text-center lg:text-left text-[17px] lg:text-2xl font-semibold text-theme-primary mr-8 lg:mr-0">
                     {t('settings.title')}
                 </h1>
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 lg:px-10 lg:py-8">
+                <div className="w-full max-w-5xl mx-auto">
 
                 <SettingsGroup title={t('settings.section.intelligence')}>
                     <SettingsItem
@@ -441,6 +442,7 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onNavigate, cu
                     <p className="mt-6 text-xs text-gray-400 font-medium tracking-wide">
                         {t('app.versionLabel', { version: APP_VERSION })}
                     </p>
+                </div>
                 </div>
             </div>
         </div>

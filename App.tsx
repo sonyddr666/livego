@@ -5,6 +5,7 @@ import { UsageScreen } from './components/UsageScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ScreenLoader } from './components/LoadingStates/ScreenLoader';
 import { Toast, showToast } from './components/Toast';
+import { DesktopSidebar } from './components/DesktopSidebar';
 
 // Lazy load secondary screens for better initial bundle size
 const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
@@ -310,16 +311,22 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="w-full h-dvh-safe md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary font-sans">
+      <div className="w-full h-dvh-safe md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary lg:bg-[#05060a] lg:p-6 font-sans">
         {/* 
           Responsive Container:
           - Mobile: Full screen, no padding, no border, no radius
           - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame)
         */}
-        <div className="w-full h-full md:max-w-[390px] md:h-[844px] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black">
+        <div className="w-full h-full md:max-w-[390px] md:h-[844px] lg:flex lg:max-w-[1440px] lg:h-[min(900px,calc(100dvh-48px))] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black lg:rounded-[28px] lg:border lg:border-white/[0.08] lg:bg-[#090a0f] lg:shadow-[0_30px_100px_rgba(0,0,0,.55)]">
+
+          <DesktopSidebar
+            currentScreen={currentScreen}
+            connected={connected}
+            onNavigate={handleNavigate}
+          />
 
           {/* Inner Screen Content */}
-          <div className="w-full h-full bg-theme-secondary overflow-hidden md:rounded-[32px] relative">
+          <div className="min-w-0 flex-1 h-full bg-theme-secondary overflow-hidden md:rounded-[32px] lg:rounded-none relative">
             {/* Toast notification — inside the phone frame */}
             <Toast />
 

@@ -71,7 +71,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
         return (
             <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
                 {/* Detail Header */}
-                <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20 shadow-sm">
+                <div className="flex items-center px-6 pt-6 pb-4 lg:px-10 lg:pt-8 lg:pb-6 bg-theme-secondary border-b border-theme sticky top-0 z-20 shadow-sm">
                     <button type="button" onClick={() => setSelectedItem(null)} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
                         <IconChevronLeft className="w-6 h-6" />
                     </button>
@@ -90,7 +90,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                 )}
 
                 {/* Chat Bubble View */}
-                <div className="flex-1 p-4 overflow-y-auto bg-theme-primary space-y-4">
+                <div className="flex-1 p-4 lg:px-10 lg:py-8 overflow-y-auto bg-theme-primary space-y-4">
+                    <div className="w-full max-w-4xl mx-auto space-y-4">
                     {parsedMessages.length === 0 ? (
                         <div className="text-center text-theme-muted mt-10 italic">{t('history.emptyTranscript')}</div>
                     ) : (
@@ -196,6 +197,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                     )}
 
                     <div className="h-4" /> {/* Bottom spacer */}
+                    </div>
                 </div>
             </div>
         );
@@ -204,21 +206,21 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
     // List View
     return (
         <div className="flex flex-col h-full bg-theme-primary transition-colors duration-300">
-            <div className="flex items-center px-6 pt-6 pb-4 bg-theme-secondary border-b border-theme sticky top-0 z-20">
-                <button type="button" onClick={onBack} className="p-2 -ml-2 text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
+            <div className="flex items-center px-6 pt-6 pb-4 lg:px-10 lg:pt-8 lg:pb-6 bg-theme-secondary border-b border-theme sticky top-0 z-20">
+                <button type="button" onClick={onBack} className="p-2 -ml-2 lg:hidden text-theme-primary rounded-full hover:bg-theme-hover transition-colors">
                     <IconChevronLeft className="w-6 h-6" />
                 </button>
-                <h1 className="flex-1 text-center text-[17px] font-semibold text-theme-primary mr-8">
+                <h1 className="flex-1 text-center lg:text-left text-[17px] lg:text-2xl font-semibold text-theme-primary mr-8 lg:mr-0">
                     {t('history.title')}
                 </h1>
             </div>
 
             {/* Context Toggle */}
-            <div className="px-6 py-4 bg-theme-secondary border-b border-theme">
+            <div className="px-6 py-4 lg:px-10 bg-theme-secondary border-b border-theme">
                 <button
                     type="button"
                     onClick={() => setUseConversationContext(!useConversationContext)}
-                    className="w-full flex items-center justify-between"
+                    className="w-full max-w-5xl mx-auto flex items-center justify-between"
                 >
                     <div className="flex flex-col">
                         <span className="text-theme-primary font-medium">Usar como Contexto</span>
@@ -230,14 +232,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ history, onBack, o
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 lg:px-10 lg:py-8">
                 {history.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-theme-muted opacity-60">
                         <IconClock className="w-16 h-16 mb-4" />
                         <p>{t('history.empty')}</p>
                     </div>
                 ) : (
-                    <div className="bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme">
+                    <div className="max-w-5xl mx-auto bg-theme-secondary rounded-xl overflow-hidden shadow-sm border border-theme">
                         {history.map((item, i) => (
                             <div
                                 key={item.id}
