@@ -127,6 +127,23 @@ button,
   transform-origin: center;
 }
 
+@keyframes landing-orb-pulse {
+  0%, 100% {
+    transform: scale(0.98);
+    box-shadow: 0 0 48px rgba(79, 70, 229, 0.2);
+  }
+  50% {
+    transform: scale(1.035);
+    box-shadow: 0 0 82px rgba(59, 130, 246, 0.38);
+  }
+}
+
+.landing-orb-pulse {
+  animation: landing-orb-pulse 3.8s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform, box-shadow;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;

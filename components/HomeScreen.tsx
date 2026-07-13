@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useId } from 'react';
 import { IconSettings } from './Icons';
 import { LiveGoLogoMark } from './LiveGoLogo';
 import { useI18n } from '../i18n';
@@ -20,6 +20,9 @@ interface SpeakButtonProps {
 
 const SpeakButton: React.FC<SpeakButtonProps> = ({ onStartCall, hasApiKey, isConnecting, desktop = false }) => {
   const { t } = useI18n();
+  const markId = useId().replace(/:/g, '');
+  const gradientId = `livego-speak-blue-${markId}`;
+  const glowId = `livego-speak-glow-${markId}`;
   return (
     <div className="relative group">
       {!isConnecting && <div className="absolute inset-0 bg-blue-500/20 dark:bg-white/10 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-500 animate-pulse-ring pointer-events-none" />}
@@ -35,17 +38,27 @@ const SpeakButton: React.FC<SpeakButtonProps> = ({ onStartCall, hasApiKey, isCon
         aria-label={isConnecting ? 'Connecting' : t('home.tapToSpeak')}
         className={`relative flex items-center justify-center rounded-full transition-all duration-300 ${desktop ? 'h-48 w-48' : 'h-40 w-40'} ${isConnecting
           ? 'bg-theme-secondary border-4 border-theme cursor-wait'
-          : `hover:scale-105 bg-gradient-to-br from-[#4353FF] to-[#2F80ED] shadow-lg shadow-blue-500/30
-             dark:bg-white/10 dark:backdrop-blur-md dark:border dark:border-white/20 dark:from-transparent dark:to-transparent
-             ${desktop ? 'lg:bg-[#15171c] lg:border-blue-400/45 lg:shadow-[0_0_70px_rgba(48,91,255,.22)] lg:hover:border-blue-400/70' : ''}`
+          : `hover:scale-105 bg-transparent border-0 shadow-none
+             dark:bg-transparent dark:border-0 dark:from-transparent dark:to-transparent
+             ${desktop ? 'lg:bg-transparent lg:border-0 lg:shadow-none' : ''}`
         } ${!hasApiKey ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       >
         {isConnecting ? (
           <div className="w-12 h-12 border-4 border-theme border-t-indigo-600 dark:border-t-white rounded-full animate-spin" />
         ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${desktop ? 'h-16 w-16' : 'h-14 w-14'} text-white drop-shadow-md`}>
-            <path d="M12 3L14.2 9.8L21 12L14.2 14.2L12 21L9.8 14.2L3 12L9.8 9.8L12 3Z" />
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="LiveGo" className="absolute inset-0 h-full w-full overflow-visible">
+            <defs>
+              <linearGradient id={gradientId} x1="48" y1="32" x2="208" y2="224" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stopColor="#6366F1" />
+                <stop offset="1" stopColor="#3B82F6" />
+              </linearGradient>
+              <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
+                <feDropShadow dx="0" dy="12" stdDeviation="18" floodColor="#3B82F6" floodOpacity=".35" />
+              </filter>
+            </defs>
+            <circle cx="128" cy="128" r="108" fill={`url(#${gradientId})`} stroke="#818CF8" strokeOpacity=".35" strokeWidth="2" filter={`url(#${glowId})`} />
+            <circle cx="128" cy="128" r="29" fill="none" stroke="#FFFFFF" strokeWidth="18" />
           </svg>
         )}
       </button>

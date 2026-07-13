@@ -2,6 +2,7 @@ import React from 'react';
 import { useI18n } from '../i18n';
 import { APP_VERSION } from '../config/version';
 import { LiveGoLogoMark } from '../components/LiveGoLogo';
+import { IconSettings } from '../components/Icons';
 
 type LandingLocale = 'pt-BR' | 'en';
 
@@ -114,22 +115,20 @@ const ProductPreview = ({ text }: { text: (typeof copy)[LandingLocale] }) => (
             {text.live}
           </div>
           <span className="font-mono text-xs text-zinc-500">00:24</span>
-          <span className="h-8 w-8 rounded-full border border-white/10 bg-white/5" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/[0.07] text-zinc-300" aria-label="Configurações">
+            <IconSettings className="h-5 w-5" />
+          </span>
         </div>
 
         <div className="relative mt-20 text-center">
           <p className="text-2xl font-semibold tracking-tight text-white">{text.listening}</p>
           <p className="mt-2 text-sm text-zinc-500">{text.active}</p>
-          <div className="mx-auto mt-12 flex h-32 w-32 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] shadow-[0_0_70px_rgba(79,70,229,.3)]">
-            <div className="flex h-20 w-20 items-center justify-center gap-1 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 shadow-xl shadow-indigo-500/30">
-              {[14, 27, 42, 31, 18].map((height, index) => (
-                <span
-                  key={height}
-                  className="landing-wave-bar w-1 rounded-full bg-white"
-                  style={{ height, animationDelay: `${index * 90}ms` }}
-                />
-              ))}
-            </div>
+          <div
+            className="landing-orb-pulse mx-auto mt-12 flex h-32 w-32 items-center justify-center rounded-full border border-indigo-300/30 bg-gradient-to-br from-indigo-500 to-blue-500 shadow-[0_0_70px_rgba(59,130,246,.38)]"
+            role="img"
+            aria-label="LiveGo"
+          >
+            <span className="h-11 w-11 rounded-full border-[13px] border-white" />
           </div>
         </div>
 
@@ -138,11 +137,23 @@ const ProductPreview = ({ text }: { text: (typeof copy)[LandingLocale] }) => (
         </div>
 
         <div className="relative mt-5 flex items-center justify-center gap-4">
-          <span className="h-11 w-11 rounded-full border border-white/10 bg-white/5" />
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/25">
-            <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m7 10 2 2 6-6 2 2-6 6 2 2-4 4-5-5 3-5Z" /></svg>
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-zinc-400">
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8" />
+            </svg>
           </span>
-          <span className="h-11 w-11 rounded-full border border-white/10 bg-white/5" />
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/25">
+            <svg aria-hidden="true" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="7" y="7" width="10" height="10" rx="1.5" />
+            </svg>
+          </span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-zinc-400">
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+              <path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" />
+            </svg>
+          </span>
         </div>
       </div>
     </div>
