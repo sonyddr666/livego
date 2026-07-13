@@ -94,12 +94,12 @@ export const DesktopSettingsPanel: React.FC<DesktopSettingsPanelProps> = ({ curr
         <div className="flex items-start justify-between">
           <div>
             <p className="text-[13px] font-medium text-zinc-200">{isPortuguese ? 'Taxa de Captura de Tela' : 'Screen capture rate'}</p>
-            <p className="mt-0.5 text-[10px] text-zinc-600">{isPortuguese ? 'Mais FPS = melhor para conteúdo dinâmico' : 'More FPS improves dynamic content'}</p>
+            <p className="mt-0.5 text-[10px] text-zinc-600">{isPortuguese ? 'Limite do Gemini 3.1 Live: 1 FPS' : 'Gemini 3.1 Live limit: 1 FPS'}</p>
           </div>
-          <span className="text-xs font-semibold text-blue-400">{screenVisionFps} FPS</span>
+          <span className="text-xs font-semibold text-blue-400">{Math.min(screenVisionFps, 1)} FPS</span>
         </div>
-        <input type="range" min={0.5} max={5} step={0.5} value={screenVisionFps} onChange={event => setScreenVisionFps(Number(event.target.value))} className="mt-4 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-blue-500" />
-        <div className="mt-1 flex justify-between text-[9px] text-zinc-600"><span>0.5</span><span>5</span></div>
+        <input type="range" min={0.5} max={1} step={0.5} value={Math.min(screenVisionFps, 1)} onChange={event => setScreenVisionFps(Number(event.target.value))} className="mt-4 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-blue-500" />
+        <div className="mt-1 flex justify-between text-[9px] text-zinc-600"><span>0.5</span><span>1</span></div>
       </section>
 
       <section className="mt-4">

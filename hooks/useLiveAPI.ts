@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality, Session } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Session, ThinkingLevel } from '@google/genai';
 import { base64ToUint8Array, decodeAudioData, createPcmBlob, resampleAudioBuffer } from '../utils/audio-utils';
 import { LiveConfig, ToolCallMessage, FunctionCall, FunctionResponseItem, WebkitWindow, ToolResult } from '../types';
 import { handleToolCall } from '../utils/dataFunctions';
@@ -54,6 +54,8 @@ GHOST-SEARCH (ghost_search):
 - Use focus="wolfram" para calculos matematicos
 - Use model="deep_research" para analises completas
 - Quando o usuario pedir pesquisa profunda, analise detalhada, ou mencionar "ghost search", use ghost_search
+- Aguarde o resultado da funcao antes de responder; as tools deste modelo sao sincronas
+- Se ghost_search falhar, use Google Search como alternativa
 - Resuma a resposta de forma natural, nao leia o texto inteiro
 
 LEITURA DE URL (fetch_page):
@@ -122,7 +124,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
   // Tool results and auto-save tracking
   const toolResultsRef = useRef<ToolResult[]>([]);
-  const pendingGhostResultsRef = useRef<ToolResult[]>([]);
   const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configRef = useRef<LiveConfig | null>(null);
@@ -207,7 +208,8 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       return;
     }
 
-    const fps = useSettingsStore.getState().screenVisionFps;
+    // Gemini 3.1 Flash Live accepts at most one video frame per second.
+    const fps = Math.min(useSettingsStore.getState().screenVisionFps, 1);
     const capture = new ScreenCapture();
 
     capture.onFrame = (base64: string) => {
@@ -215,7 +217,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       if (!isConnectedRef.current || !session) return;
       try {
         session.sendRealtimeInput({
-          media: { data: base64, mimeType: 'image/jpeg' }
+          video: { data: base64, mimeType: 'image/jpeg' }
         });
       } catch {
         isConnectedRef.current = false;
@@ -273,10 +275,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     if (!normalizedText || !isConnectedRef.current || !session) return false;
 
     try {
-      session.sendClientContent({
-        turns: [{ role: 'user', parts: [{ text: normalizedText }] }],
-        turnComplete: true,
-      });
+      session.sendRealtimeInput({ text: normalizedText });
 
       currentSpeakerRef.current = 'user';
       setTranscript(previousTranscript => {
@@ -450,7 +449,6 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       setTranscript('');
       currentSpeakerRef.current = null;
       toolResultsRef.current = [];
-      pendingGhostResultsRef.current = [];
       setToolResults([]);
       startTimeRef.current = Date.now();
       configRef.current = config;
@@ -486,7 +484,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       console.log('[DEBUG] Creating WebSocket session...');
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-3.1-flash-live-preview',
         callbacks: {
           onopen: () => {
             console.log("[DEBUG] Live Session Opened - WebSocket connected");
@@ -559,7 +557,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
               const nativeSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
               const pcmBlob = createPcmBlob(dataToSend, nativeSampleRate);
               try {
-                session.sendRealtimeInput({ media: pcmBlob });
+                session.sendRealtimeInput({ audio: pcmBlob });
               } catch {
                 // WebSocket entering CLOSING state — stop sending silently
                 isConnectedRef.current = false;
@@ -619,7 +617,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             // Debug: Log message types to diagnose interrupt issues
-            const hasAudio = !!message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            const modelParts = message.serverContent?.modelTurn?.parts ?? [];
+            const audioChunks = modelParts
+              .map(part => part.inlineData)
+              .filter(inlineData => inlineData?.data && (!inlineData.mimeType || inlineData.mimeType.startsWith('audio/')))
+              .map(inlineData => inlineData!.data!);
+            const hasAudio = audioChunks.length > 0;
             const hasInterrupted = !!message.serverContent?.interrupted;
             const hasInputTranscription = !!message.serverContent?.inputTranscription;
             const hasOutputTranscription = !!message.serverContent?.outputTranscription;
@@ -683,13 +686,12 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             }
 
             // Handle Audio Output - Add to queue instead of processing directly
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio && outputAudioContextRef.current) {
+            if (audioChunks.length > 0 && outputAudioContextRef.current) {
               // New audio chunk = new response, reset interrupt flag
               isInterruptedRef.current = false;
 
-              // Add to queue for async processing
-              audioQueueRef.current.push(base64Audio);
+              // Gemini 3.1 may return multiple content parts in one event.
+              audioQueueRef.current.push(...audioChunks);
 
               // Process queue if not already processing
               if (!isProcessingQueueRef.current) {
@@ -728,37 +730,18 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                       for (const call of functionCalls) {
                         console.log('[Tool] Function called:', call.name, call.args);
 
-                        // A1: GHOST SEARCH — Busca dual (resposta imediata + background)
+                        // Gemini 3.1 supports synchronous function calling only.
                         if (call.name === 'ghost_search') {
-                          console.log('[Tool] Ghost Search: responding immediately, running in background');
+                          console.log('[Tool] Ghost Search: waiting for synchronous result');
 
                           // Dispatch event so UI shows BUSCANDO tag
                           window.dispatchEvent(new CustomEvent('livego:search_active', {
                             detail: { query: (call.args as any)?.query || '' }
                           }));
                           
-                          // 1. Respond IMMEDIATELY to Gemini (avoids 1011 timeout)
-                          const immediateResponse = {
-                            ok: true,
-                            status: 'searching_in_background',
-                            message: 'Busca profunda do Ghost Search iniciada em background. ' +
-                              'Enquanto o resultado completo nao chega, use sua busca nativa do Google ' +
-                              'para dar uma resposta rapida ao usuario. Quando o Ghost Search terminar, ' +
-                              'informe o usuario que tem informacoes mais detalhadas disponiveis. ' +
-                              'Pergunte se ele quer ouvir o resultado completo.',
-                            query: (call.args as any)?.query || '',
-                          };
-                          
-                          functionResponses.push({
-                            id: call.id || '',
-                            name: call.name || '',
-                            response: immediateResponse
-                          });
-
-                          // 2. Start ghost_search in background (NO await)
                           const ghostCallArgs = call.args as any;
-                          handleToolCall(call as FunctionCall).then((ghostResult) => {
-                            console.log('[Tool] Ghost Search background result arrived:', ghostResult?.ok);
+                          const ghostResult = await handleToolCall(call as FunctionCall);
+                          console.log('[Tool] Ghost Search synchronous result arrived:', ghostResult?.ok);
 
                             // Dispatch event so UI hides BUSCANDO tag
                             window.dispatchEvent(new CustomEvent('livego:search_done', {
@@ -777,34 +760,13 @@ export const useLiveAPI = (): UseLiveAPIResult => {
                             toolResultsRef.current.push(toolResult);
                             setToolResults([...toolResultsRef.current]);
 
-                            if (isConnectedRef.current && sessionRef.current) {
-                              // Session still alive — save as pending for the next interaction
-                              pendingGhostResultsRef.current.push(toolResult);
-                              console.log('[Tool] Ghost result saved as pending. Count:', pendingGhostResultsRef.current.length);
-                            } else {
-                              // Session dropped — save to localStorage for next reconnection
-                              console.log('[Tool] Session closed. Saving ghost result to dropped session.');
-                              try {
-                                const existing = localStorage.getItem('livego_dropped_session');
-                                if (existing) {
-                                  const session = JSON.parse(existing);
-                                  session.pendingGhostResults = session.pendingGhostResults || [];
-                                  session.pendingGhostResults.push(toolResult);
-                                  localStorage.setItem('livego_dropped_session', JSON.stringify(session));
-                                }
-                              } catch (e) {
-                                console.warn('[Tool] Failed to save ghost result to dropped session:', e);
-                              }
-                            }
-                          }).catch((err) => {
-                            console.error('[Tool] Ghost Search background error:', err);
-                            // Clear BUSCANDO tag on error too
-                            window.dispatchEvent(new CustomEvent('livego:search_done', {
-                              detail: { query: ghostCallArgs?.query || '', ok: false, error: true }
-                            }));
-                          });
+                            functionResponses.push({
+                              id: call.id || '',
+                              name: call.name || '',
+                              response: ghostResult
+                            });
 
-                          continue; // Skip normal await flow for ghost_search
+                          continue;
                         }
 
                         // All other tools: normal synchronous flow
@@ -906,9 +868,9 @@ export const useLiveAPI = (): UseLiveAPIResult => {
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          // NOTE: realtimeInputConfig with VAD sensitivity is NOT supported
-          // on gemini-2.5-flash-native-audio-preview — causes 1008 crash.
-          // Interrupt relies on: 1) low noise gate (0.002), 2) no audio muting during tools.
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+          // Affective dialog, proactive audio, and NON_BLOCKING tools are not
+          // supported by Gemini 3.1 Flash Live and are intentionally omitted.
           ...(tools.length > 0 && { tools })
         }
       });
