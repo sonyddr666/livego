@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ScreenLoader } from './components/LoadingStates/ScreenLoader';
 import { Toast, showToast } from './components/Toast';
 import { DesktopSidebar } from './components/DesktopSidebar';
+import { DesktopTopBar } from './components/DesktopTopBar';
+import { DesktopSettingsPanel } from './components/DesktopSettingsPanel';
 
 // Lazy load secondary screens for better initial bundle size
 const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
@@ -309,6 +311,11 @@ const App: React.FC = () => {
     setHistory(prev => prev.filter(item => item.id !== id));
   };
 
+  const handleSettingsChildBack = () => {
+    const desktopWorkspace = window.matchMedia('(min-width: 1024px)').matches;
+    handleNavigate(desktopWorkspace ? ScreenName.HOME : ScreenName.SETTINGS);
+  };
+
   return (
     <ErrorBoundary>
       <div className="w-full h-dvh-safe md:flex md:justify-center md:items-center md:min-h-screen md:bg-theme-primary lg:bg-[#05060a] lg:p-6 font-sans">
@@ -317,16 +324,19 @@ const App: React.FC = () => {
           - Mobile: Full screen, no padding, no border, no radius
           - Desktop (md+): Fixed width/height, rounded corners, black border (phone frame)
         */}
-        <div className="w-full h-full md:max-w-[390px] md:h-[844px] lg:flex lg:max-w-[1440px] lg:h-[min(900px,calc(100dvh-48px))] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black lg:rounded-[28px] lg:border lg:border-white/[0.08] lg:bg-[#090a0f] lg:shadow-[0_30px_100px_rgba(0,0,0,.55)]">
+        <div className="w-full h-full md:max-w-[390px] md:h-[844px] lg:flex lg:flex-col lg:max-w-[1600px] lg:h-[min(920px,calc(100dvh-40px))] relative overflow-hidden md:rounded-[40px] md:shadow-[0_30px_60px_-10px_var(--shadow-color)] md:border-[8px] md:border-black md:bg-black lg:rounded-[16px] lg:border lg:border-white/[0.14] lg:bg-[#090a0f] lg:shadow-[0_30px_100px_rgba(0,0,0,.65)]">
 
-          <DesktopSidebar
-            currentScreen={currentScreen}
-            connected={connected}
-            onNavigate={handleNavigate}
-          />
+          <DesktopTopBar />
 
-          {/* Inner Screen Content */}
-          <div className="min-w-0 flex-1 h-full bg-theme-secondary overflow-hidden md:rounded-[32px] lg:rounded-none relative">
+          <div className="flex min-h-0 flex-1">
+            <DesktopSidebar
+              currentScreen={currentScreen}
+              connected={connected}
+              onNavigate={handleNavigate}
+            />
+
+            {/* Inner Screen Content */}
+            <div className="min-w-0 flex-1 h-full bg-theme-secondary overflow-hidden md:rounded-[32px] lg:rounded-none relative">
             {/* Toast notification — inside the phone frame */}
             <Toast />
 
@@ -367,7 +377,7 @@ const App: React.FC = () => {
               {currentScreen === ScreenName.HISTORY && (
                 <HistoryScreen
                   history={history}
-                  onBack={() => handleNavigate(ScreenName.SETTINGS)}
+                  onBack={handleSettingsChildBack}
                   onDelete={deleteHistoryItem}
                 />
               )}
@@ -386,7 +396,7 @@ const App: React.FC = () => {
               ].includes(currentScreen) && (
                   <SettingsDetailScreen
                     screen={currentScreen}
-                    onBack={() => handleNavigate(ScreenName.SETTINGS)}
+                    onBack={handleSettingsChildBack}
                     voiceName={voiceName}
                     setVoiceName={setVoiceName}
                     apiKey={apiKey}
@@ -394,6 +404,11 @@ const App: React.FC = () => {
                   />
                 )}
             </Suspense>
+            </div>
+
+            {currentScreen === ScreenName.HOME && !connected && (
+              <DesktopSettingsPanel currentVoice={voiceName} onNavigate={handleNavigate} />
+            )}
           </div>
         </div>
       </div>
