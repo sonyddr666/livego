@@ -334,14 +334,16 @@ export const useLiveAPI = (): UseLiveAPIResult => {
 
       console.log('[DEBUG] Starting connection...');
 
-      // Use only the key supplied by the user for this browser tab.
-      const apiKey = config.apiKey;
-      if (!apiKey) {
-        throw new Error('API Key not found. Please configure your API key in Settings > Account.');
+      const credential = config.credential;
+      if (!credential) {
+        throw new Error('Live credential not found. Configure your Gemini API key in Settings > Account.');
       }
 
-      console.log('[DEBUG] API key found, creating GoogleGenAI instance...');
-      const ai = new GoogleGenAI({ apiKey });
+      console.log('[DEBUG] Live credential found, creating GoogleGenAI instance...');
+      const ai = new GoogleGenAI({
+        apiKey: credential.value,
+        httpOptions: { apiVersion: credential.apiVersion },
+      });
 
       const AudioContextClass = window.AudioContext || (window as WebkitWindow).webkitAudioContext;
       if (!AudioContextClass) {

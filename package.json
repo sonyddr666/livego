@@ -1,11 +1,13 @@
 {
   "name": "livego-voice-app",
   "private": true,
-  "version": "1.0.17",
+  "version": "1.0.18",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server.mjs",
     "build": "npm run lint && npm run type-check && vite build",
+    "start": "node server.mjs",
     "preview": "vite preview",
     "lint": "eslint . --report-unused-disable-directives",
     "lint:fix": "eslint . --fix",
@@ -16,26 +18,32 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^8.29.0",
     "@vitejs/plugin-react-swc": "^3.7.2",
+    "autoprefixer": "^10.5.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^16.4.0",
+    "postcss": "^8.5.19",
     "prettier": "^3.4.2",
     "rollup-plugin-visualizer": "^5.12.0",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

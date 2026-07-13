@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useI18n } from '../i18n';
 
 interface ToastData {
   message: string;
@@ -48,6 +49,7 @@ const COLORS: Record<string, { bg: string; border: string; glow: string }> = {
  * Listens for 'livego:toast' events. Use showToast() to trigger.
  */
 export const Toast: React.FC = () => {
+  const { locale } = useI18n();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,7 +115,7 @@ export const Toast: React.FC = () => {
             setTimeout(() => setToast(null), 400);
           }}
         >
-          {toast.actionLabel || 'toque para fechar'}
+          {toast.actionLabel || (locale === 'pt-BR' ? 'toque para fechar' : 'tap to close')}
         </p>
       </div>
     </div>

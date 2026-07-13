@@ -3,8 +3,8 @@ import { ScreenName, HistoryItem, DroppedSession, ToolResult } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { UsageScreen } from './components/UsageScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { SkeletonLoader } from './components/LoadingStates/SkeletonLoader';
-import { Toast } from './components/Toast';
+import { ScreenLoader } from './components/LoadingStates/ScreenLoader';
+import { Toast, showToast } from './components/Toast';
 
 // Lazy load secondary screens for better initial bundle size
 const SettingsScreen = lazy(() => import('./components/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
@@ -16,6 +16,7 @@ import { useI18n } from './i18n';
 import { useInstructionPresets } from './store/instructionPresetsStore';
 import { useSettingsStore } from './store/settingsStore';
 import { readSessionApiKey, writeSessionApiKey } from './utils/apiKeyStorage';
+import { resolveLiveCredential } from './utils/liveCredential';
 
 const HISTORY_STORAGE_KEY = 'livego_history';
 const DROPPED_SESSION_KEY = 'livego_dropped_session';
@@ -36,9 +37,10 @@ const App: React.FC = () => {
 
   // API keys are scoped to the current browser tab and never bundled at build time.
   const [apiKey, setApiKey] = useState<string>(readSessionApiKey);
+  const [needsPersonalKey, setNeedsPersonalKey] = useState(false);
 
   // Computed: Check if a user-configured API key is available.
-  const hasApiKey = Boolean(apiKey);
+  const canStartCall = !needsPersonalKey || Boolean(apiKey);
 
   // History State - Load from localStorage on mount
   const [history, setHistory] = useState<HistoryItem[]>(() => {
@@ -178,6 +180,7 @@ const App: React.FC = () => {
   const handleApiKeyChange = (newApiKey: string) => {
     setApiKey(newApiKey);
     writeSessionApiKey(newApiKey);
+    if (newApiKey.trim()) setNeedsPersonalKey(false);
   };
 
   const handleNavigate = (screen: ScreenName) => {
@@ -185,9 +188,16 @@ const App: React.FC = () => {
   };
 
   const handleStartCall = async () => {
-    // If no API key is configured, redirect to Account settings
-    if (!hasApiKey) {
+    const credentialResolution = await resolveLiveCredential(apiKey);
+    if (!credentialResolution.credential) {
+      setNeedsPersonalKey(true);
       setCurrentScreen(ScreenName.ACCOUNT);
+      showToast(
+        locale === 'pt-BR'
+          ? 'O acesso compartilhado não está disponível agora. Adicione sua chave Gemini para continuar.'
+          : 'Shared access is unavailable right now. Add your Gemini key to continue.',
+        credentialResolution.reason === 'rate-limited' ? 'warning' : 'info'
+      );
       return;
     }
 
@@ -254,7 +264,7 @@ const App: React.FC = () => {
       contextWithHistory = `${contextWithHistory}\n\n[Contexto de conversas anteriores]:\n${recentHistory}`;
     }
 
-    await connect({ voiceName, systemInstruction: contextWithHistory, apiKey, enableAdvancedFeatures: true, useConversationContext, onUnexpectedDisconnect: handleUnexpectedDisconnect });
+    await connect({ voiceName, systemInstruction: contextWithHistory, credential: credentialResolution.credential, enableAdvancedFeatures: true, useConversationContext, onUnexpectedDisconnect: handleUnexpectedDisconnect });
   };
 
   // Watch for connection state to transition screen
@@ -317,7 +327,7 @@ const App: React.FC = () => {
               <HomeScreen
                 onStartCall={handleStartCall}
                 onSettings={() => handleNavigate(ScreenName.SETTINGS)}
-                hasApiKey={hasApiKey}
+                hasApiKey={canStartCall}
                 onConfigureApiKey={() => handleNavigate(ScreenName.ACCOUNT)}
                 isConnecting={isConnecting}
               />
@@ -338,7 +348,7 @@ const App: React.FC = () => {
             )}
 
             {/* Lazy loaded screens with Suspense */}
-            <Suspense fallback={<SkeletonLoader />}>
+            <Suspense fallback={<ScreenLoader />}>
               {currentScreen === ScreenName.SETTINGS && (
                 <SettingsScreen
                   onBack={() => handleNavigate(connected ? ScreenName.USAGE : ScreenName.HOME)}

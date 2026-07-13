@@ -25,7 +25,7 @@ export interface SettingsItemProps {
 export interface LiveConfig {
   voiceName: string;
   systemInstruction: string;
-  apiKey?: string;
+  credential?: LiveCredential;
   enableAdvancedFeatures?: boolean;
   useConversationContext?: boolean;
   onUnexpectedDisconnect?: (data: {
@@ -35,6 +35,10 @@ export interface LiveConfig {
     closeReason: string;
   }) => void;
 }
+
+export type LiveCredential =
+  | { kind: 'ephemeral'; value: string; apiVersion: 'v1alpha' }
+  | { kind: 'user-key'; value: string; apiVersion: 'v1beta' };
 
 export interface ToolResult {
   toolName: string;

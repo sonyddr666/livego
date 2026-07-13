@@ -482,7 +482,7 @@ const ChatApp: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => window.location.assign('/')}
+                    onClick={() => window.location.assign('/app')}
                     className="p-2 -ml-2 text-gray-900 rounded-full hover:bg-gray-100 transition-colors"
                     title="Back"
                   >

@@ -1,185 +1,115 @@
-const CACHE_NAME = 'livego-v1.0.17';
-const STATIC_ASSETS = [
-    '/',
-    '/index.html',
-    '/manifest.json',
-];
+const CACHE_NAME = 'livego-v1.0.18';
+const OFFLINE_STATE_CACHE = 'livego-offline-state';
+const OFFLINE_START_REQUEST = '/__livego_offline_start__';
+const OFFLINE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const NETWORK_TIMEOUT_MS = 10_000;
+const STATIC_ASSETS = ['/', '/app', '/index.html', '/manifest.json'];
 
-// Offline timeout configuration
-const OFFLINE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
-const OFFLINE_START_KEY = 'livego_offline_start';
-
-// Install event - cache static assets
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
-        })
-    );
-    self.skipWaiting();
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
 });
 
-// Activate event - clean old caches
 self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames
-                    .filter((name) => name !== CACHE_NAME)
-                    .map((name) => caches.delete(name))
-            );
-        })
-    );
-    self.clients.claim();
+  event.waitUntil(
+    caches.keys().then((names) => Promise.all(
+      names
+        .filter((name) => name.startsWith('livego-') && name !== CACHE_NAME && name !== OFFLINE_STATE_CACHE)
+        .map((name) => caches.delete(name))
+    ))
+  );
 });
 
-// Helper to get offline start from IndexedDB (localStorage not available in SW)
 async function getOfflineStart() {
-    try {
-        const cache = await caches.open('livego-offline-state');
-        const response = await cache.match('offline-start');
-        if (response) {
-            const data = await response.json();
-            return data.timestamp;
-        }
-    } catch (e) {
-        console.log('[SW] Error reading offline state:', e);
-    }
-    return null;
+  const cache = await caches.open(OFFLINE_STATE_CACHE);
+  const response = await cache.match(OFFLINE_START_REQUEST);
+  if (!response) return null;
+  const data = await response.json();
+  return typeof data.timestamp === 'number' ? data.timestamp : null;
 }
 
-async function setOfflineStart(timestamp) {
-    try {
-        const cache = await caches.open('livego-offline-state');
-        const response = new Response(JSON.stringify({ timestamp }));
-        await cache.put('offline-start', response);
-    } catch (e) {
-        console.log('[SW] Error saving offline state:', e);
-    }
+async function markOffline() {
+  const existing = await getOfflineStart();
+  if (existing !== null) return existing;
+  const timestamp = Date.now();
+  const cache = await caches.open(OFFLINE_STATE_CACHE);
+  await cache.put(OFFLINE_START_REQUEST, new Response(JSON.stringify({ timestamp })));
+  return timestamp;
 }
 
-async function clearOfflineStart() {
-    try {
-        const cache = await caches.open('livego-offline-state');
-        await cache.delete('offline-start');
-    } catch (e) {
-        console.log('[SW] Error clearing offline state:', e);
-    }
+async function clearOfflineState() {
+  const cache = await caches.open(OFFLINE_STATE_CACHE);
+  await cache.delete(OFFLINE_START_REQUEST);
 }
 
-// Check if offline timeout has expired
-async function isOfflineTimeoutExpired() {
-    const offlineStart = await getOfflineStart();
-    if (offlineStart === null) return false;
-    return (Date.now() - offlineStart) > OFFLINE_TIMEOUT_MS;
+async function fetchWithTimeout(request) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-// Fetch event - network first, fallback to cache with persistent timeout
+async function cacheResponse(request, response) {
+  if (!response.ok) return;
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(request, response.clone());
+}
+
+function offlineExpiredResponse(request) {
+  if (request.mode !== 'navigate') {
+    return new Response('Offline session expired', { status: 503 });
+  }
+  return new Response(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LiveGo offline</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#07080d;color:#fff;font:16px Inter,system-ui"><main style="max-width:420px;padding:32px;text-align:center"><h1>Sessão offline expirada</h1><p style="color:#a1a1aa;line-height:1.6">Reconecte-se à internet para carregar uma versão atualizada do LiveGo.</p><button onclick="location.reload()" style="border:0;border-radius:999px;padding:12px 20px;font-weight:700">Tentar novamente</button></main></body></html>`, {
+    status: 503,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+async function offlineFallback(request) {
+  const offlineStart = await markOffline();
+  if (Date.now() - offlineStart > OFFLINE_TIMEOUT_MS) return offlineExpiredResponse(request);
+
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  if (request.mode === 'navigate') {
+    return (await caches.match(request.url.includes('/app') ? '/app' : '/'))
+      || (await caches.match('/index.html'))
+      || new Response('Offline', { status: 503 });
+  }
+  return new Response('Offline', { status: 503 });
+}
+
+async function networkFirst(request) {
+  try {
+    const response = await fetchWithTimeout(request);
+    await clearOfflineState();
+    await cacheResponse(request, response);
+    return response;
+  } catch {
+    return offlineFallback(request);
+  }
+}
+
+async function cacheFirstAsset(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  return networkFirst(request);
+}
+
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests
-    if (event.request.method !== 'GET') return;
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  if (!request.url.startsWith(self.location.origin)) return;
 
-    // Skip API calls and external resources
-    if (event.request.url.includes('generativelanguage.googleapis.com')) return;
-    if (!event.request.url.startsWith(self.location.origin)) return;
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/api/')) return;
 
-    event.respondWith(
-        (async () => {
-            try {
-                const response = await fetch(event.request);
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirstAsset(request));
+    return;
+  }
 
-                // Network is working - clear offline timer
-                await clearOfflineStart();
-
-                // Clone and cache successful responses
-                if (response.ok) {
-                    const responseClone = response.clone();
-                    const cache = await caches.open(CACHE_NAME);
-                    cache.put(event.request, responseClone);
-                }
-                return response;
-            } catch (error) {
-                // Network failed - start or continue offline timer
-                let offlineStart = await getOfflineStart();
-
-                if (offlineStart === null) {
-                    offlineStart = Date.now();
-                    await setOfflineStart(offlineStart);
-                    console.log('[SW] Went offline at:', new Date(offlineStart).toISOString());
-                }
-
-                // Check if offline timeout has expired
-                const elapsed = Date.now() - offlineStart;
-                if (elapsed > OFFLINE_TIMEOUT_MS) {
-                    console.log('[SW] Offline timeout expired (24h), refusing to serve cache');
-
-                    // Return an "offline expired" page for navigation requests
-                    if (event.request.mode === 'navigate') {
-                        return new Response(
-                            `<!DOCTYPE html>
-                            <html>
-                            <head>
-                                <meta charset="UTF-8">
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                <title>Sessão Expirada - LiveGo</title>
-                                <style>
-                                    body {
-                                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                                        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-                                        color: #fff;
-                                        display: flex;
-                                        flex-direction: column;
-                                        align-items: center;
-                                        justify-content: center;
-                                        height: 100vh;
-                                        margin: 0;
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
-                                    p { color: #a0a0a0; margin-bottom: 2rem; max-width: 300px; }
-                                    button {
-                                        background: #4f46e5;
-                                        color: white;
-                                        border: none;
-                                        padding: 12px 32px;
-                                        border-radius: 8px;
-                                        font-size: 1rem;
-                                        cursor: pointer;
-                                    }
-                                    button:hover { background: #4338ca; }
-                                </style>
-                            </head>
-                            <body>
-                                <h1>⏱️ Sessão Offline Expirada</h1>
-                                <p>O app ficou mais de 24 horas sem conexão com o servidor. Reconecte à internet para continuar usando o LiveGo.</p>
-                                <button onclick="location.reload()">Tentar Novamente</button>
-                            </body>
-                            </html>`,
-                            {
-                                status: 503,
-                                headers: { 'Content-Type': 'text/html; charset=utf-8' }
-                            }
-                        );
-                    }
-
-                    return new Response('Offline session expired', { status: 503 });
-                }
-
-                // Still within timeout - serve from cache
-                const hoursRemaining = Math.round((OFFLINE_TIMEOUT_MS - elapsed) / (60 * 60 * 1000));
-                console.log('[SW] Serving from cache. Hours remaining:', hoursRemaining);
-
-                const cachedResponse = await caches.match(event.request);
-                if (cachedResponse) return cachedResponse;
-
-                // Return offline page for navigation requests
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/');
-                }
-
-                return new Response('Offline', { status: 503 });
-            }
-        })()
-    );
+  event.respondWith(networkFirst(request));
 });

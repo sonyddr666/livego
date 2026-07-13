@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       allowedHosts: ['.trycloudflare.com', 'localhost', '.onrender.com', '.livego.dev'],
       proxy: {
+        '/api/gemini': {
+          target: 'http://localhost:10000',
+          changeOrigin: true,
+        },
         '/api/ghost': {
           target: 'https://api.ghost1.cloud',
           changeOrigin: true,

@@ -19,8 +19,19 @@ Abra o endereço exibido pelo Vite e informe sua chave Gemini em
 `Configurações > Conta`. A chave fica apenas na sessão da aba atual e é removida
 quando a sessão do navegador termina.
 
-Não configure `GEMINI_API_KEY` nem `VITE_GEMINI_API_KEY` em deploys do frontend.
-Variáveis expostas pelo Vite são compiladas no bundle público do navegador.
+A raiz `/` exibe a landing page e o aplicativo fica disponível em `/app`.
+
+Para testar localmente o endpoint de tokens em outro terminal:
+
+```bash
+npm run dev:server
+```
+
+Quando `GEMINI_API_KEY` está configurada apenas no servidor, o LiveGo solicita
+um token efêmero e de uso único antes de abrir a sessão Gemini Live. Se a
+variável não existir ou o limite for atingido, o app usa a chave pessoal da aba.
+Não configure `VITE_GEMINI_API_KEY`: variáveis expostas pelo Vite entram no
+bundle público do navegador.
 
 ## Validação
 
@@ -39,6 +50,6 @@ npm run analyze
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sonyddr666/livego&config=render.yaml)
 
-O Render executa `npm run build` e serve a aplicação na porta configurada pelo
-arquivo `render.yaml`. A chave Gemini deve ser fornecida por cada usuário na
-interface; ela não deve ser cadastrada como variável do serviço frontend.
+O Render executa `npm run build` e inicia o servidor Node com `npm start`. A
+variável `GEMINI_API_KEY` é lida somente pelo servidor para provisionar tokens
+temporários; ela nunca deve receber prefixo `VITE_` nem ser acessada no frontend.

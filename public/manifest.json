@@ -2,11 +2,12 @@
     "name": "LiveGo",
     "short_name": "LiveGo",
     "description": "Real-time voice conversations with Gemini AI",
-    "start_url": "/",
+    "start_url": "/app",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#0a0a0a",
     "theme_color": "#4f46e5",
-    "orientation": "portrait",
+    "orientation": "any",
     "icons": [
         {
             "src": "/icons/icon-192.png",
