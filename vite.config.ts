@@ -28,12 +28,21 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api/gemini': {
           target: 'http://localhost:10000',
-          changeOrigin: true,
+          // Preserve the browser-facing host so the API's same-origin check
+          // also works when local development uses 127.0.0.1 instead of localhost.
+          changeOrigin: false,
         },
         '/api/ghost': {
           target: 'https://api.ghost1.cloud',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/ghost/, ''),
+          rewrite: (requestPath) => requestPath.replace(/^\/api\/ghost/, ''),
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyRequest) => {
+              proxyRequest.removeHeader('origin');
+              proxyRequest.removeHeader('referer');
+              proxyRequest.setHeader('X-API-Key', 'coloque_uma_senha_aqui');
+            });
+          },
         },
       },
     },

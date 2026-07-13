@@ -574,7 +574,7 @@ export async function ghostSearch(args: {
     focus?: string;
     time_range?: string;
 }): Promise<any> {
-    // Always use proxy path — works in dev (Vite proxy) and production (Render _redirects proxy)
+    // Same-origin proxy avoids browser CORS while preserving the existing tool flow.
     const GHOST_SEARCH_URL = '/api/ghost/search';
     const GHOST_TIMEOUT_MS = 60000; // deep_research pode demorar ate 60s
 

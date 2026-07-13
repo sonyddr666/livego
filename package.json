@@ -1,7 +1,7 @@
 {
   "name": "livego-voice-app",
   "private": true,
-  "version": "1.0.25",
+  "version": "1.0.28",
   "type": "module",
   "scripts": {
     "dev": "vite",

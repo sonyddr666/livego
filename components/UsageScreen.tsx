@@ -14,6 +14,47 @@ interface UsageScreenProps {
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
   isScreenSharing: boolean;
   toggleScreenShare: () => void;
+  onSendText: (text: string) => boolean;
+}
+
+type SearchNotice = {
+  query: string;
+  status: 'searching' | 'success' | 'error';
+};
+
+const SEARCH_RESULT_VISIBLE_MS = 3000;
+const MAX_VISIBLE_TRANSCRIPT_CHARS = 420;
+const TRANSCRIPT_PREVIEW_CHARS = 240;
+
+type TranscriptTurn = {
+  speaker: 'user' | 'gemini' | 'unknown';
+  text: string;
+};
+
+function parseTranscript(transcript: string): TranscriptTurn[] {
+  if (!transcript.trim()) return [];
+
+  const markerPattern = /(?:^|\n)(User|Gemini):\s*/g;
+  const markers = [...transcript.matchAll(markerPattern)];
+  if (markers.length === 0) return [{ speaker: 'unknown', text: transcript.trim() }];
+
+  const turns: TranscriptTurn[] = [];
+  const firstMarkerIndex = markers[0]?.index ?? 0;
+  const leadingText = transcript.slice(0, firstMarkerIndex).trim();
+  if (leadingText) turns.push({ speaker: 'unknown', text: leadingText });
+
+  markers.forEach((marker, index) => {
+    const contentStart = (marker.index ?? 0) + marker[0].length;
+    const contentEnd = markers[index + 1]?.index ?? transcript.length;
+    const text = transcript.slice(contentStart, contentEnd).trim();
+    if (!text) return;
+    turns.push({
+      speaker: marker[1] === 'User' ? 'user' : 'gemini',
+      text,
+    });
+  });
+
+  return turns;
 }
 
 const UsageScreenComponent: React.FC<UsageScreenProps> = ({
@@ -25,39 +66,44 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
   caption,
   getAnalysers,
   isScreenSharing,
-  toggleScreenShare
+  toggleScreenShare,
+  onSendText,
 }) => {
   const { t, locale } = useI18n();
   const isPortuguese = locale === 'pt-BR';
   const [seconds, setSeconds] = useState(0);
+  const [textDraft, setTextDraft] = useState('');
   const mobileCaptionRef = useRef<HTMLDivElement>(null);
   const desktopCaptionRef = useRef<HTMLDivElement>(null);
 
-  // Search active state (BUSCANDO tag)
-  const [activeSearches, setActiveSearches] = useState<string[]>([]);
+  // Visual status only. Ghost Search execution remains managed by useLiveAPI.
+  const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
+  const searchNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const onSearchStart = (e: Event) => {
       const query = (e as CustomEvent).detail?.query || '';
-      setActiveSearches(prev => [...prev, query]);
+      if (searchNoticeTimerRef.current) clearTimeout(searchNoticeTimerRef.current);
+      setSearchNotice({ query, status: 'searching' });
     };
     const onSearchDone = (e: Event) => {
-      const query = (e as CustomEvent).detail?.query || '';
-      setActiveSearches(prev => {
-        const idx = prev.indexOf(query);
-        if (idx >= 0) {
-          const next = [...prev];
-          next.splice(idx, 1);
-          return next;
-        }
-        return prev;
+      const detail = (e as CustomEvent).detail || {};
+      setSearchNotice({
+        query: detail.query || '',
+        status: detail.ok ? 'success' : 'error',
       });
+      if (searchNoticeTimerRef.current) clearTimeout(searchNoticeTimerRef.current);
+      searchNoticeTimerRef.current = setTimeout(
+        () => setSearchNotice(null),
+        SEARCH_RESULT_VISIBLE_MS,
+      );
     };
     window.addEventListener('livego:search_active', onSearchStart);
     window.addEventListener('livego:search_done', onSearchDone);
     return () => {
       window.removeEventListener('livego:search_active', onSearchStart);
       window.removeEventListener('livego:search_done', onSearchDone);
+      if (searchNoticeTimerRef.current) clearTimeout(searchNoticeTimerRef.current);
     };
   }, []);
 
@@ -69,6 +115,14 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
       .replace(/(^|\n)User: /g, `$1${userLabel}: `)
       .replace(/(^|\n)Gemini: /g, `$1${geminiLabel}: `);
   }, [caption, t]);
+
+  const transcriptTurns = useMemo(() => parseTranscript(caption), [caption]);
+
+  const submitTextMessage = () => {
+    const message = textDraft.trim();
+    if (!message) return;
+    if (onSendText(message)) setTextDraft('');
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -99,13 +153,33 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
       {/* Image Overlay — show_image skill */}
       <ImageOverlay />
 
-      {/* BUSCANDO tag — shows while ghost_search is running */}
-      {activeSearches.length > 0 && (
-        <div className="absolute top-24 left-0 right-0 2xl:right-[390px] flex justify-center z-30 pointer-events-none animate-in">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600/80 backdrop-blur-md border border-purple-400/30 shadow-lg shadow-purple-500/20">
-            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span className="text-xs font-bold text-white uppercase tracking-wider">🔍 {isPortuguese ? 'Buscando' : 'Searching'}</span>
-            <span className="text-xs text-purple-200 max-w-[150px] truncate">{activeSearches[activeSearches.length - 1]}</span>
+      {/* Ghost Search status — progress stays visible; result remains for 3 seconds. */}
+      {searchNotice && (
+        <div
+          className="absolute top-24 left-0 right-0 2xl:right-[390px] flex justify-center px-4 z-30 pointer-events-none animate-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div className={`flex max-w-[min(92vw,430px)] items-center gap-3 rounded-2xl border px-4 py-3 backdrop-blur-xl shadow-lg ${
+            searchNotice.status === 'searching'
+              ? 'border-purple-400/35 bg-purple-600/85 shadow-purple-500/25'
+              : searchNotice.status === 'success'
+                ? 'border-emerald-400/35 bg-emerald-700/90 shadow-emerald-500/20'
+                : 'border-rose-400/35 bg-rose-700/90 shadow-rose-500/20'
+          }`}>
+            <div className={`h-2.5 w-2.5 shrink-0 rounded-full bg-white ${searchNotice.status === 'searching' ? 'animate-pulse' : ''}`} />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white uppercase tracking-wider">
+                {searchNotice.status === 'searching'
+                  ? (isPortuguese ? '🔍 Buscando com Ghost' : '🔍 Searching with Ghost')
+                  : searchNotice.status === 'success'
+                    ? (isPortuguese ? '✓ Pesquisa concluída' : '✓ Search complete')
+                    : (isPortuguese ? '✕ Pesquisa não concluída' : '✕ Search failed')}
+              </p>
+              {searchNotice.query && (
+                <p className="mt-0.5 truncate text-xs text-white/75">{searchNotice.query}</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -158,8 +232,52 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
             role="log"
             aria-live="polite"
           >
-            {localizedCaption ? (
-              <p className="text-[14px] leading-7 text-gray-200 whitespace-pre-wrap">{localizedCaption}</p>
+            {transcriptTurns.length > 0 ? (
+              <div className="space-y-3">
+                {transcriptTurns.map((turn, index) => {
+                  const isLongContent = turn.text.length > MAX_VISIBLE_TRANSCRIPT_CHARS;
+                  const visibleText = isLongContent
+                    ? `${turn.text.slice(0, TRANSCRIPT_PREVIEW_CHARS).trimEnd()}…`
+                    : turn.text;
+                  const isUser = turn.speaker === 'user';
+                  const isGemini = turn.speaker === 'gemini';
+
+                  return (
+                    <article
+                      key={`${turn.speaker}-${index}`}
+                      className={`rounded-2xl border px-4 py-3 ${
+                        isUser
+                          ? 'border-purple-400/20 bg-purple-500/10'
+                          : isGemini
+                            ? 'border-blue-400/20 bg-blue-500/10'
+                            : 'border-white/10 bg-white/[0.035]'
+                      }`}
+                    >
+                      <p className={`text-[10px] font-bold uppercase tracking-[0.16em] ${
+                        isUser ? 'text-purple-300' : isGemini ? 'text-blue-300' : 'text-gray-500'
+                      }`}>
+                        {isUser
+                          ? (isPortuguese ? 'Usuário' : 'You')
+                          : isGemini
+                            ? 'Gemini'
+                            : (isPortuguese ? 'Transcrição' : 'Transcript')}
+                      </p>
+                      <p className={`mt-1.5 whitespace-pre-wrap text-[13px] leading-6 ${
+                        isUser ? 'text-purple-100' : isGemini ? 'text-blue-100' : 'text-gray-300'
+                      }`}>
+                        {visibleText}
+                      </p>
+                      {isLongContent && (
+                        <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                          {isPortuguese
+                            ? `Conteúdo extenso · ${turn.text.length} caracteres`
+                            : `Long content · ${turn.text.length} characters`}
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center px-6">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-400/20 flex items-center justify-center mb-4">
@@ -174,6 +292,42 @@ const UsageScreenComponent: React.FC<UsageScreenProps> = ({
               </div>
             )}
           </div>
+          <form
+            className="border-t border-white/10 bg-black/20 p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitTextMessage();
+            }}
+          >
+            <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-white/[0.045] p-2 focus-within:border-indigo-400/50 focus-within:bg-white/[0.07]">
+              <textarea
+                value={textDraft}
+                onChange={(event) => setTextDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    submitTextMessage();
+                  }
+                }}
+                rows={1}
+                maxLength={10000}
+                placeholder={isPortuguese ? 'Enviar texto ao Gemini…' : 'Send text to Gemini…'}
+                aria-label={isPortuguese ? 'Mensagem para o Gemini' : 'Message to Gemini'}
+                className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 text-white outline-none placeholder:text-gray-600"
+              />
+              <button
+                type="submit"
+                disabled={!textDraft.trim()}
+                aria-label={isPortuguese ? 'Enviar mensagem' : 'Send message'}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-lg font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                ↑
+              </button>
+            </div>
+            <p className="mt-2 px-1 text-[10px] text-gray-600">
+              {isPortuguese ? 'Enter envia · Shift+Enter quebra a linha' : 'Enter sends · Shift+Enter adds a line'}
+            </p>
+          </form>
         </aside>
       </div>
 

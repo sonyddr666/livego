@@ -94,9 +94,11 @@ app.post('/api/gemini/token', tokenLimiter, async (request, response) => {
 app.use('/api/ghost', async (request, response) => {
   const upstreamPath = request.originalUrl.replace(/^\/api\/ghost/, '') || '/';
   const upstreamUrl = `https://api.ghost1.cloud${upstreamPath}`;
-  const headers = { Accept: request.get('accept') || 'application/json' };
-  const contentType = request.get('content-type');
-  if (contentType) headers['Content-Type'] = contentType;
+  const headers = {
+    Accept: request.get('accept') || 'application/json',
+    'Content-Type': request.get('content-type') || 'application/json',
+    'X-API-Key': 'coloque_uma_senha_aqui',
+  };
 
   try {
     const upstream = await fetch(upstreamUrl, {

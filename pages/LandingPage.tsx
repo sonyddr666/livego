@@ -1,6 +1,7 @@
 import React from 'react';
 import { useI18n } from '../i18n';
 import { APP_VERSION } from '../config/version';
+import { LiveGoLogoMark } from '../components/LiveGoLogo';
 
 type LandingLocale = 'pt-BR' | 'en';
 
@@ -97,9 +98,7 @@ const ArrowIcon = () => (
 );
 
 const BrandMark = () => (
-  <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 shadow-lg shadow-indigo-500/25">
-    <span className="h-4 w-4 rounded-full border-[5px] border-white" />
-  </span>
+  <LiveGoLogoMark className="h-9 w-9 drop-shadow-[0_8px_14px_rgba(79,70,229,.3)]" />
 );
 
 const ProductPreview = ({ text }: { text: (typeof copy)[LandingLocale] }) => (

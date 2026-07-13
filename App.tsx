@@ -111,7 +111,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, isScreenSharing, toggleScreenShare, getAnalysers } = useLiveAPI();
+  const { connected, isConnecting, connect, disconnect, isMuted, toggleMute, isSpeakerOn, toggleSpeaker, transcript, toolResults, isScreenSharing, toggleScreenShare, sendTextMessage, getAnalysers } = useLiveAPI();
 
   useEffect(() => {
     if (connected && desktopPanelScreen === ScreenName.ACCOUNT) {
@@ -207,7 +207,7 @@ const App: React.FC = () => {
     const credentialResolution = await resolveLiveCredential(apiKey);
     if (!credentialResolution.credential) {
       setNeedsPersonalKey(true);
-      setCurrentScreen(ScreenName.ACCOUNT);
+      handleResponsiveNavigate(ScreenName.ACCOUNT);
       showToast(
         locale === 'pt-BR'
           ? 'O acesso compartilhado não está disponível agora. Adicione sua chave Gemini para continuar.'
@@ -394,6 +394,7 @@ const App: React.FC = () => {
                 getAnalysers={getAnalysers}
                 isScreenSharing={isScreenSharing}
                 toggleScreenShare={toggleScreenShare}
+                onSendText={sendTextMessage}
               />
             )}
 

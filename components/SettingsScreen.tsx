@@ -11,6 +11,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSkillsStore } from '../store/skillsStore';
 import { SkillsScreenContent } from './SkillsScreen';
 import { APP_VERSION } from '../config/version';
+import { LiveGoLogoMark } from './LiveGoLogo';
 
 // Instructions Screen with Presets Component
 const InstructionsScreenWithPresets: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -774,9 +775,7 @@ export const SettingsDetailScreen: React.FC<SettingsDetailProps> = ({
             <ContentWrapper>
                 <DetailHeader onBack={onBack} title={t('settings.about.title')} />
                 <div className="p-6 flex flex-col items-center pt-10">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-lg mb-6">
-                        <IconSparkles className="w-8 h-8" />
-                    </div>
+                    <LiveGoLogoMark className="mb-6 h-16 w-16 drop-shadow-[0_10px_22px_rgba(79,70,229,.35)]" />
                     <h2 className="text-xl font-bold text-theme-primary">LIVEGO</h2>
                     <p className="text-theme-muted mb-8">{t('app.versionBeta', { version: APP_VERSION })}</p>
 

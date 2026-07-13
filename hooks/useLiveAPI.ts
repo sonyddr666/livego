@@ -78,6 +78,7 @@ interface UseLiveAPIResult {
   toggleMute: () => void;
   toggleSpeaker: () => void;
   toggleScreenShare: () => void;
+  sendTextMessage: (text: string) => boolean;
   getAnalysers: () => { input: AnalyserNode | null, output: AnalyserNode | null };
 }
 
@@ -94,7 +95,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const sessionPromiseRef = useRef<Promise<Session> | null>(null);
-  const sessionRef = useRef<any>(null); // Direct session ref for synchronous access (no .then() race)
+  const sessionRef = useRef<Session | null>(null); // Direct session ref for synchronous access (no .then() race)
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
 
@@ -264,6 +265,44 @@ export const useLiveAPI = (): UseLiveAPIResult => {
       }
       return newValue;
     });
+  }, []);
+
+  const sendTextMessage = useCallback((text: string) => {
+    const normalizedText = text.trim();
+    const session = sessionRef.current;
+    if (!normalizedText || !isConnectedRef.current || !session) return false;
+
+    try {
+      session.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text: normalizedText }] }],
+        turnComplete: true,
+      });
+
+      currentSpeakerRef.current = 'user';
+      setTranscript(previousTranscript => {
+        const prefix = previousTranscript.length > 0 ? '\n' : '';
+        const nextTranscript = `${previousTranscript}${prefix}User: ${normalizedText}`;
+        transcriptRef.current = nextTranscript;
+
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+          try {
+            localStorage.setItem('livego_active_session', JSON.stringify({
+              transcript: transcriptRef.current,
+              toolResults: toolResultsRef.current,
+              timestamp: Date.now(),
+              startTime: startTimeRef.current,
+            }));
+          } catch { /* Session snapshots are best-effort. */ }
+        }, 3000);
+
+        return nextTranscript;
+      });
+      return true;
+    } catch (error) {
+      console.error('[Live] Failed to send text message:', error);
+      return false;
+    }
   }, []);
 
   // Async playback loop - processes audio queue without blocking onmessage
@@ -464,7 +503,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
             setIsConnecting(false); // Stop loading
 
             // Cache session synchronously for sendAudioChunk/onFrame (avoids .then() race)
-            sessionPromiseRef.current?.then((s: any) => { sessionRef.current = s; });
+            sessionPromiseRef.current?.then((session) => { sessionRef.current = session; });
 
             // (auto-save debounce moved to transcript handler)
 
@@ -907,6 +946,7 @@ export const useLiveAPI = (): UseLiveAPIResult => {
     disconnect,
     toggleMute,
     toggleSpeaker,
-    toggleScreenShare
+    toggleScreenShare,
+    sendTextMessage,
   };
 };

@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
-import { IconSettings, IconSparkles } from './Icons';
+import { IconSettings } from './Icons';
+import { LiveGoLogoMark } from './LiveGoLogo';
 import { useI18n } from '../i18n';
 
 interface HomeScreenProps {
@@ -68,7 +69,7 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ onStartCall, onSetting
         <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[60%] bg-gradient-to-b from-indigo-500/10 to-transparent rounded-[100%] blur-3xl pointer-events-none" />
         <div className="flex justify-between items-center px-8 pt-6 pb-6 relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-lg"><IconSparkles className="w-6 h-6" /></div>
+            <LiveGoLogoMark className="h-10 w-10 drop-shadow-[0_8px_14px_rgba(79,70,229,.35)]" />
             <span className="font-bold text-xl tracking-tight text-theme-primary">LIVEGO</span>
           </div>
           <button onClick={onSettings} disabled={isConnecting} className="p-3 rounded-full hover:bg-theme-hover active:bg-theme-active transition-all text-theme-secondary" aria-label="Settings"><IconSettings className="w-6 h-6" /></button>

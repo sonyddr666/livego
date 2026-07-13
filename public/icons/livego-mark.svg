@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="livego-gradient" x1="51" y1="51" x2="461" y2="461" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="154" fill="url(#livego-gradient)"/>
+  <circle cx="256" cy="256" r="80" stroke="white" stroke-width="70"/>
+</svg>
